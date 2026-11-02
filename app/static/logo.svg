@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="VendorSetu logo">
+  <defs>
+    <linearGradient id="vs-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1c8a57"/>
+      <stop offset="1" stop-color="#0f5c3a"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#vs-bg)"/>
+  <!-- stall awning -->
+  <path d="M12 14h40l-3 10H15z" fill="#ffffff"/>
+  <path d="M22 14h6.7l-1.2 10h-6.2zM35.3 14H42l2.7 10h-6.2z" fill="#f6a93b"/>
+  <circle cx="18.5" cy="24" r="3.5" fill="#ffffff"/>
+  <circle cx="25.5" cy="24" r="3.5" fill="#f6a93b"/>
+  <circle cx="32.5" cy="24" r="3.5" fill="#ffffff"/>
+  <circle cx="39.5" cy="24" r="3.5" fill="#f6a93b"/>
+  <circle cx="46.5" cy="24" r="3.5" fill="#ffffff"/>
+  <!-- bridge (setu) -->
+  <path d="M10 48c7-11 37-11 44 0" fill="none" stroke="#f6a93b" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M8 49h48" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M22 41.2V49M32 39.2V49M42 41.2V49" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"/>
+</svg>

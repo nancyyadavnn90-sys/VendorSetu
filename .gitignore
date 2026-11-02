@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local demo database (recreate with: cd app && python seed_demo.py)
+app/vendorsetu.db
+
+# Word / Office lock files
+~$*
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

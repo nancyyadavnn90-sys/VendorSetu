@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Bank Officer{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <span class="eyebrow">{{ icon("bank", 15) }} Bank / NBFC officer</span>
+    <h1 style="margin-top:.35rem">Loan applications</h1>
+    <p>Review score-backed applications, disburse approved loans and track defaults.</p>
+  </div>
+  <form method="post" action="{{ url_for('mark_defaults') }}">
+    <button class="btn ghost" type="submit">{{ icon("alert", 18) }} Run default check (90+ days overdue)</button>
+  </form>
+</div>
+
+<section class="grid four" style="margin-bottom:1.25rem">
+  <div class="card kpi"><span class="icon-badge orange">{{ icon("clock") }}</span>
+    <div><div class="value">{{ counts.get('PENDING', 0) }}</div><div class="label">Pending review</div></div></div>
+  <div class="card kpi"><span class="icon-badge blue">{{ icon("check") }}</span>
+    <div><div class="value">{{ counts.get('APPROVED', 0) }}</div><div class="label">Approved, to disburse</div></div></div>
+  <div class="card kpi"><span class="icon-badge">{{ icon("wallet") }}</span>
+    <div><div class="value">{{ counts.get('DISBURSED', 0) }}</div><div class="label">Active (disbursed)</div></div></div>
+  <div class="card kpi"><span class="icon-badge red">{{ icon("alert") }}</span>
+    <div><div class="value">{{ counts.get('DEFAULTED', 0) }}</div><div class="label">Defaulted</div></div></div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <div class="title"><span class="icon-badge">{{ icon("file") }}</span><div><h2>All applications</h2><span class="muted">Pending first</span></div></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Vendor</th><th>Loan</th><th class="num">Amount</th><th class="num">Trust Score</th><th>Status</th><th style="width:270px">Action</th></tr>
+      </thead>
+      <tbody>
+        {% for l in loans %}
+          {% set band = 'low-risk' if l['trust_score'] >= 70 else ('medium-risk' if l['trust_score'] >= 40 else 'high-risk') %}
+          <tr>
+            <td><div class="cell-user"><span class="avatar">{{ l['vendor_name']|initials }}</span>
+              <div><strong>{{ l['vendor_name'] }}</strong><small>{{ l['vendor_phone'] }}</small></div></div></td>
+            <td><strong>#{{ l['loan_id'] }}</strong><br><span class="muted">Tier {{ l['tier'] }} · {{ l['applied_on'] }}</span></td>
+            <td class="num">₹{{ '{:,.0f}'.format(l['amount']) }}</td>
+            <td class="num"><span class="score-badge {{ band }}">{{ l['trust_score'] }}</span></td>
+            <td><span class="pill {{ l['status']|lower }}">{{ l['status'] }}</span>
+                {% if l['remarks'] %}<br><span class="muted">{{ l['remarks'] }}</span>{% endif %}</td>
+            <td>
+              {% if l['status'] == 'PENDING' %}
+                <form method="post" action="{{ url_for('review_loan', loan_id=l['loan_id']) }}" class="review-form">
+                  <input name="remarks" placeholder="Remarks (required to reject)">
+                  <button class="btn small" name="decision" value="APPROVE">Approve</button>
+                  <button class="btn small danger" name="decision" value="REJECT">Reject</button>
+                </form>
+              {% elif l['status'] == 'APPROVED' %}
+                <form method="post" action="{{ url_for('disburse_loan', loan_id=l['loan_id']) }}">
+                  <button class="btn small accent" type="submit">{{ icon("wallet", 16) }} Disburse</button>
+                </form>
+              {% else %}
+                <a href="{{ url_for('loan_detail', loan_id=l['loan_id']) }}">View EMI schedule →</a>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="empty">No applications yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

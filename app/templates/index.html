@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <span class="eyebrow">{{ icon("shield", 15) }} Built on the PM SVANidhi model</span>
+    <h1>Credit for the vendors who keep our <em>streets running</em></h1>
+    <p>VendorSetu gives street vendors a digital business identity and a <strong>Trust Score</strong> built from their
+       daily sales &mdash; so banks can lend to them without a CIBIL history.</p>
+    <div class="actions">
+      <a class="btn accent" href="{{ url_for('register') }}">Get started {{ icon("arrow", 18) }}</a>
+      <a class="btn ghost" href="{{ url_for('login') }}">I already have an account</a>
+    </div>
+    <div class="hero-tiers">
+      <div><strong>₹15,000</strong><span>Tier 1 · 12 months</span></div>
+      <div><strong>₹25,000</strong><span>Tier 2 · 18 months</span></div>
+      <div><strong>₹50,000</strong><span>Tier 3 · 36 months</span></div>
+    </div>
+  </div>
+
+  <div class="mock" aria-hidden="true">
+    <div class="card-head">
+      <div class="title"><span class="avatar">RK</span><div><strong>Ramesh Kumar</strong><div class="muted">Fruits &amp; vegetables</div></div></div>
+      <span class="pill disbursed">Verified</span>
+    </div>
+    <div class="score-wrap">
+      <div class="ring low-risk">
+        <svg width="120" height="120" viewBox="0 0 140 140"><circle class="track" cx="70" cy="70" r="58" fill="none" stroke-width="14"/>
+          <circle class="bar" cx="70" cy="70" r="58" fill="none" stroke-width="14" stroke-linecap="round" stroke-dasharray="364.4" stroke-dashoffset="105.7"/></svg>
+        <div class="center"><strong>71</strong><span>Trust Score</span></div>
+      </div>
+      <div><span class="score-badge low-risk">LOW RISK</span><p class="muted" style="margin-top:.5rem">Eligible for Tier 1 loan</p></div>
+    </div>
+    <div class="mock-row"><span class="muted">Active days (30)</span><strong>26</strong></div>
+    <div class="mock-row"><span class="muted">30-day sales</span><strong>₹41,560</strong></div>
+    <div class="mock-row"><span class="muted">Next EMI</span><strong>₹1,332.73</strong></div>
+  </div>
+</section>
+
+<div class="section-title">
+  <span class="eyebrow">How it works</span>
+  <h2 style="font-size:1.6rem;margin-top:.4rem">From daily sales to a bank loan in three steps</h2>
+</div>
+<section class="grid three steps">
+  <div class="card feature step">
+    <span class="icon-badge">{{ icon("store", 22) }}</span>
+    <h3>Log your daily sales</h3>
+    <p>Record each day's cash or UPI sales from your phone in a few seconds.</p>
+  </div>
+  <div class="card feature step">
+    <span class="icon-badge orange">{{ icon("trending", 22) }}</span>
+    <h3>Earn a Trust Score</h3>
+    <p>Sales consistency, on-time repayments, peer vouching and vending tenure add up to a score out of 100.</p>
+  </div>
+  <div class="card feature step">
+    <span class="icon-badge blue">{{ icon("bank", 22) }}</span>
+    <h3>Grow with progressive loans</h3>
+    <p>A bank officer reviews and disburses. Repay one tier on time to unlock the next.</p>
+  </div>
+</section>
+
+<div class="section-title">
+  <span class="eyebrow">One platform, four users</span>
+  <h2 style="font-size:1.6rem;margin-top:.4rem">Everyone the vendor depends on, connected</h2>
+</div>
+<section class="grid four">
+  <div class="card feature"><span class="icon-badge">{{ icon("store", 22) }}</span><h3>Street Vendors</h3><p>Profile, sales log, Trust Score, loans and EMIs.</p></div>
+  <div class="card feature"><span class="icon-badge blue">{{ icon("bank", 22) }}</span><h3>Banks &amp; NBFCs</h3><p>Score-backed applications, approval, disbursal and default tracking.</p></div>
+  <div class="card feature"><span class="icon-badge orange">{{ icon("building", 22) }}</span><h3>Municipal Bodies</h3><p>Vendor registry by zone, licences and dispute cases.</p></div>
+  <div class="card feature"><span class="icon-badge red">{{ icon("users", 22) }}</span><h3>Customers</h3><p>Find nearby vendors and pay them digitally.</p></div>
+</section>
+{% endblock %}

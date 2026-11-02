@@ -1,0 +1,45 @@
+{% from "_icons.html" import icon %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}VendorSetu{% endblock %} · VendorSetu</title>
+  <link rel="icon" href="{{ url_for('static', filename='logo.svg') }}" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('index') }}">
+      <img src="{{ url_for('static', filename='logo.svg') }}" alt="">
+      <span>Vendor<b>Setu</b><small>Formalize · Grow · Borrow</small></span>
+    </a>
+    <nav class="nav">
+      {% if current_user %}
+        <a class="link" href="{{ url_for('dashboard') }}">Dashboard</a>
+        <div class="userchip">
+          <span class="avatar">{{ current_user['name']|initials }}</span>
+          <div class="who"><strong>{{ current_user['name'] }}</strong><span>{{ ROLE_LABELS[current_user['role']] }}</span></div>
+        </div>
+        <a class="btn ghost small" href="{{ url_for('logout') }}">{{ icon("logout", 16) }} Logout</a>
+      {% else %}
+        <a class="link" href="{{ url_for('login') }}">Log in</a>
+        <a class="btn small" href="{{ url_for('register') }}">Create account</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="flash {{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">VendorSetu · Street Vendor Formalization &amp; Micro-Credit Platform · CSE3005 Software Engineering Project, BML Munjal University</footer>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

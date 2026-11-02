@@ -1,0 +1,5 @@
+flask>=3.0
+pytest>=8.0
+# only needed to regenerate diagrams / the SRS document
+matplotlib>=3.8
+python-docx>=1.1

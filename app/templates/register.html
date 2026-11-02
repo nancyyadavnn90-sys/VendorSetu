@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Create account{% endblock %}
+{% block content %}
+{% set role_icons = {"VENDOR": "store", "BANK_OFFICER": "bank", "MUNICIPAL_OFFICER": "building", "CUSTOMER": "users"} %}
+<div class="auth">
+  <aside class="auth-side">
+    <div>
+      <img src="{{ url_for('static', filename='logo.svg') }}" alt="VendorSetu logo">
+      <h2>Join VendorSetu</h2>
+      <p>One account for vendors, lenders, municipal officers and customers.</p>
+    </div>
+    <ul>
+      <li>{{ icon("check", 20) }} Free digital business identity for vendors</li>
+      <li>{{ icon("check", 20) }} Transparent, explainable Trust Score</li>
+      <li>{{ icon("check", 20) }} Role-based access for every user</li>
+    </ul>
+  </aside>
+
+  <section class="auth-form">
+    <form method="post">
+      <h1>Create account</h1>
+      <p class="sub">It takes less than a minute.</p>
+      <label>Full name
+        <input name="name" placeholder="e.g. Ramesh Kumar" required>
+      </label>
+      <label>Mobile number
+        <input name="phone" inputmode="numeric" maxlength="10" placeholder="10-digit mobile number" required>
+      </label>
+      <label>I am a</label>
+      <div class="role-grid">
+        {% for r in roles %}
+          <label><input type="radio" name="role" value="{{ r }}" {{ "checked" if loop.first }}>
+            <span>{{ icon(role_icons[r], 18) }} {{ ROLE_LABELS[r] }}</span></label>
+        {% endfor %}
+      </div>
+      <div class="form-grid">
+        <label>Password
+          <input name="password" type="password" placeholder="6+ chars, letters + digits" required>
+        </label>
+        <label>Confirm password
+          <input name="confirm_password" type="password" placeholder="Repeat password" required>
+        </label>
+      </div>
+      <button class="btn full" type="submit">Create account {{ icon("arrow", 18) }}</button>
+      <p class="muted" style="margin-top:1rem">Already registered? <a href="{{ url_for('login') }}">Log in</a></p>
+    </form>
+  </section>
+</div>
+{% endblock %}

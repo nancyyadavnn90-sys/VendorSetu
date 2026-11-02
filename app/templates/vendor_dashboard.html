@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}Vendor Dashboard{% endblock %}
+{% block content %}
+{% set first_name = current_user['name'].split(' ')[0] %}
+<div class="page-head">
+  <div>
+    <span class="eyebrow">{{ icon("store", 15) }} Vendor dashboard</span>
+    <h1 style="margin-top:.35rem">Namaste, {{ first_name }}</h1>
+    <p>{% if profile %}{{ profile['business_type'] }} · {{ profile['vending_zone'] }}{% else %}Complete your business profile to unlock your Trust Score.{% endif %}</p>
+  </div>
+  {% if profile and profile['upi_id'] %}<span class="chip">{{ icon("wallet", 15) }} {{ profile['upi_id'] }}</span>{% endif %}
+</div>
+
+<!-- KPI row -->
+<section class="grid four" style="margin-bottom:1.25rem">
+  <div class="card kpi"><span class="icon-badge">{{ icon("shield") }}</span>
+    <div><div class="value">{{ trust['score'] if trust else '—' }}<span class="muted" style="font-size:.9rem">/100</span></div>
+      <div class="label">Trust Score{% if trust %} · {{ trust['band']|title }}{% endif %}</div></div></div>
+  <div class="card kpi"><span class="icon-badge orange">{{ icon("rupee") }}</span>
+    <div><div class="value">₹{{ '{:,.0f}'.format(summary['total']) }}</div><div class="label">Sales, last 30 days</div></div></div>
+  <div class="card kpi"><span class="icon-badge blue">{{ icon("calendar") }}</span>
+    <div><div class="value">{{ summary['active_days'] }}<span class="muted" style="font-size:.9rem">/30</span></div><div class="label">Active selling days</div></div></div>
+  {% if next_emi %}
+  <div class="card kpi"><span class="icon-badge red">{{ icon("clock") }}</span>
+    <div><div class="value">₹{{ '{:,.2f}'.format(next_emi['emi_amount']) }}</div><div class="label">Next EMI · due {{ next_emi['due_date'] }}</div></div></div>
+  {% else %}
+  <div class="card kpi"><span class="icon-badge">{{ icon("wallet") }}</span>
+    <div><div class="value">₹{{ '{:,}'.format(tier_limit[0]) }}</div><div class="label">Eligible limit · Tier {{ tier }}</div></div></div>
+  {% endif %}
+</section>
+
+<div class="grid main-side">
+  <div class="stack">
+    <!-- Module 3: trust score -->
+    <section class="card">
+      <div class="card-head">
+        <div class="title"><span class="icon-badge">{{ icon("shield") }}</span><div><h2>Trust Score</h2><span class="muted">Your alternative credit score</span></div></div>
+        {% if trust %}<span class="score-badge {{ trust['band']|lower|replace(' ', '-') }}">{{ trust['band'] }}</span>{% endif %}
+      </div>
+      {% if trust %}
+        {% set dash = 364.4 %}
+        <div class="score-wrap">
+          <div class="ring {{ trust['band']|lower|replace(' ', '-') }}">
+            <svg width="140" height="140" viewBox="0 0 140 140">
+              <circle class="track" cx="70" cy="70" r="58" fill="none" stroke-width="14"/>
+              <circle class="bar" cx="70" cy="70" r="58" fill="none" stroke-width="14" stroke-linecap="round"
+                      stroke-dasharray="{{ dash }}" stroke-dashoffset="{{ '%.1f' % (dash * (1 - trust['score'] / 100)) }}"/>
+            </svg>
+            <div class="center"><strong>{{ trust['score'] }}</strong><span>out of 100</span></div>
+          </div>
+          <div class="components">
+            {% for name, pts in trust['components'].items() %}
+              {% set max_pts = component_max[name] %}
+              <div class="component">
+                <div class="row"><span>{{ name }}</span><span>{{ pts }} / {{ max_pts }}</span></div>
+                <div class="meter"><span style="width: {{ (pts / max_pts * 100)|round(1) }}%"></span></div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+        <p class="muted" style="margin:1rem 0 0">A score of <strong>40 or more</strong> is needed to apply for a loan. Log sales every day and repay EMIs on time to raise it.</p>
+      {% else %}
+        <p class="empty">Save your business profile to see your Trust Score.</p>
+      {% endif %}
+    </section>
+
+    <!-- Module 2: sales -->
+    <section class="card">
+      <div class="card-head">
+        <div class="title"><span class="icon-badge orange">{{ icon("trending") }}</span><div><h2>Daily sales</h2><span class="muted">Last 14 days · avg ₹{{ '{:,.0f}'.format(summary['average']) }} per active day</span></div></div>
+      </div>
+      <div class="chart">
+        {% for d in chart %}
+          <div class="bar {{ 'zero' if not d['amount'] }}" style="height: {{ (d['amount'] / chart_max * 100) if d['amount'] else 3 }}%"
+               data-tip="{{ d['label'] }}: ₹{{ '{:,.0f}'.format(d['amount']) }}"></div>
+        {% endfor %}
+      </div>
+      <div class="chart-labels"><span>{{ chart[0]['label'] }}</span><span>Today</span></div>
+
+      <form method="post" action="{{ url_for('log_sale') }}" class="form-grid" style="margin-top:1.25rem">
+        <label>Date <input name="sale_date" type="date" value="{{ today }}" required></label>
+        <label>Amount (₹) <input name="amount" type="number" step="0.01" placeholder="e.g. 1500" required></label>
+        <label>Payment mode
+          <select name="payment_mode"><option value="CASH">Cash</option><option value="UPI">UPI</option></select>
+        </label>
+        <label>&nbsp;<button class="btn full" type="submit" style="margin-top:.35rem">{{ icon("plus", 18) }} Log sale</button></label>
+      </form>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Mode</th><th class="num">Amount</th></tr></thead>
+          <tbody>
+            {% for s in sales[:7] %}
+              <tr><td>{{ s['sale_date'] }}</td><td><span class="chip">{{ s['payment_mode'] }}</span></td><td class="num">₹{{ '{:,.2f}'.format(s['amount']) }}</td></tr>
+            {% else %}
+              <tr><td colspan="3" class="empty">No sales logged yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="stack">
+    <!-- Module 4: loans -->
+    <section class="card">
+      <div class="card-head">
+        <div class="title"><span class="icon-badge blue">{{ icon("bank") }}</span><div><h2>Micro-credit</h2><span class="muted">Progressive loans, PM SVANidhi tiers</span></div></div>
+      </div>
+      <div class="tiers">
+        {% for t, info in tiers.items() %}
+          <div class="tier {{ 'active' if t == tier else ('done' if t < tier else '') }}">
+            <span>Tier {{ t }}</span><strong>₹{{ '{:,}'.format(info[0]) }}</strong><span>{{ info[1] }} months</span>
+          </div>
+        {% endfor %}
+      </div>
+      <form method="post" action="{{ url_for('apply_loan') }}" class="inline-form">
+        <div class="input-icon" style="flex:1">{{ icon("rupee", 18) }}
+          <input name="amount" type="number" value="{{ tier_limit[0] }}" required></div>
+        <button class="btn" type="submit">Apply for loan</button>
+      </form>
+      <p class="muted" style="margin-top:.6rem">You can borrow up to ₹{{ '{:,}'.format(tier_limit[0]) }}, repaid in {{ tier_limit[1] }} monthly EMIs.</p>
+
+      <div class="table-wrap" style="margin-top:.75rem">
+        <table>
+          <thead><tr><th>Loan</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {% for l in loans %}
+              <tr>
+                <td><strong>#{{ l['loan_id'] }}</strong><br><span class="muted">Tier {{ l['tier'] }} · {{ l['applied_on'] }}</span></td>
+                <td class="num">₹{{ '{:,.0f}'.format(l['amount']) }}</td>
+                <td><span class="pill {{ l['status']|lower }}">{{ l['status'] }}</span></td>
+                <td class="num">
+                  <a href="{{ url_for('loan_detail', loan_id=l['loan_id']) }}">View</a>
+                  {% if l['status'] == 'PENDING' %}
+                    <form method="post" action="{{ url_for('withdraw_loan', loan_id=l['loan_id']) }}" style="display:inline">
+                      · <button class="link" type="submit">Withdraw</button>
+                    </form>
+                  {% endif %}
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="4" class="empty">No loans yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Module 2: profile -->
+    <section class="card">
+      <div class="card-head">
+        <div class="title"><span class="icon-badge">{{ icon("edit") }}</span><div><h2>Business profile</h2><span class="muted">{{ 'Keep your details up to date' if profile else 'Required before logging sales' }}</span></div></div>
+      </div>
+      <form method="post" action="{{ url_for('save_profile') }}">
+        <label>Business type
+          <input name="business_type" value="{{ profile['business_type'] if profile else '' }}" placeholder="e.g. Fruits &amp; vegetables" required>
+        </label>
+        <label>Vending zone
+          <input name="vending_zone" value="{{ profile['vending_zone'] if profile else '' }}" placeholder="e.g. Sector 14 Market, Gurugram" required>
+        </label>
+        <div class="form-grid">
+          <label>Years of vending
+            <input name="years_vending" type="number" value="{{ profile['years_vending'] if profile else 0 }}" required>
+          </label>
+          <label>UPI ID (optional)
+            <input name="upi_id" value="{{ profile['upi_id'] if profile else '' }}" placeholder="name@upi">
+          </label>
+        </div>
+        <button class="btn ghost full" type="submit">Save profile</button>
+      </form>
+    </section>
+  </div>
+</div>
+{% endblock %}

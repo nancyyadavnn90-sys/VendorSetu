@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Municipal Officer{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <span class="eyebrow">{{ icon("building", 15) }} Municipal officer</span>
+    <h1 style="margin-top:.35rem">Vendor registry</h1>
+    <p>Registered street vendors in your city, grouped by vending zone.</p>
+  </div>
+</div>
+
+<section class="grid four" style="margin-bottom:1.25rem">
+  <div class="card kpi"><span class="icon-badge">{{ icon("store") }}</span>
+    <div><div class="value">{{ vendors|length }}</div><div class="label">Registered vendors</div></div></div>
+  <div class="card kpi"><span class="icon-badge orange">{{ icon("pin") }}</span>
+    <div><div class="value">{{ zones|length }}</div><div class="label">Vending zones</div></div></div>
+  <div class="card kpi"><span class="icon-badge blue">{{ icon("wallet") }}</span>
+    <div><div class="value">{{ vendors|selectattr('upi_id')|list|length }}</div><div class="label">Accept UPI</div></div></div>
+  <div class="card kpi"><span class="icon-badge red">{{ icon("file") }}</span>
+    <div><div class="value">—</div><div class="label">Licences (next release)</div></div></div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <div class="title"><span class="icon-badge">{{ icon("users") }}</span><div><h2>Vendors by zone</h2></div></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Vendor</th><th>Business</th><th>Vending zone</th><th>UPI</th></tr></thead>
+      <tbody>
+        {% for v in vendors|sort(attribute='vending_zone') %}
+          <tr>
+            <td><div class="cell-user"><span class="avatar">{{ v['name']|initials }}</span><strong>{{ v['name'] }}</strong></div></td>
+            <td>{{ v['business_type'] }}</td>
+            <td>{{ icon("pin", 15) }} {{ v['vending_zone'] }}</td>
+            <td>{{ v['upi_id'] or '—' }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="empty">No vendors registered yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<div class="note">{{ icon("alert", 18) }} <span>Vending-licence issue/renewal and dispute/eviction case logging are specified in SRS Sections 4.7 and 4.8 and planned for the next release.</span></div>
+{% endblock %}

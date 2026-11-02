@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Find Vendors{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <span class="eyebrow">{{ icon("pin", 15) }} Customer</span>
+    <h1 style="margin-top:.35rem">Find vendors near you</h1>
+    <p>Search by market, sector or road and pay vendors directly by UPI.</p>
+  </div>
+</div>
+
+<form method="get" class="search-bar">
+  <div class="input-icon">{{ icon("search", 18) }}<input name="zone" value="{{ zone }}" placeholder="Search area, e.g. Sector 14 or Sohna Road"></div>
+  <button class="btn" type="submit">Search</button>
+</form>
+
+<p class="muted" style="margin-bottom:1rem">{{ vendors|length }} vendor{{ '' if vendors|length == 1 else 's' }} found{% if zone %} for “{{ zone }}”{% endif %}</p>
+<section class="grid three">
+  {% for v in vendors %}
+    <div class="card vendor-card">
+      <div class="top"><span class="avatar lg">{{ v['name']|initials }}</span>
+        <div><h3>{{ v['name'] }}</h3><span class="muted">{{ v['business_type'] }}</span></div></div>
+      <div class="meta">{{ icon("pin", 16) }} {{ v['vending_zone'] }}</div>
+      {% if v['upi_id'] %}<span class="chip" style="align-self:flex-start">{{ icon("wallet", 15) }} Pay via UPI: {{ v['upi_id'] }}</span>
+      {% else %}<span class="chip" style="align-self:flex-start">Cash only</span>{% endif %}
+    </div>
+  {% else %}
+    <div class="card empty">No vendors found. Try another area.</div>
+  {% endfor %}
+</section>
+<div class="note">{{ icon("alert", 18) }} <span>Map view, in-app payment and hygiene ratings are specified in SRS Section 4.9 and planned for the next release.</span></div>
+{% endblock %}

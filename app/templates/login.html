@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Log in{% endblock %}
+{% block content %}
+<div class="auth">
+  <aside class="auth-side">
+    <div>
+      <img src="{{ url_for('static', filename='logo.svg') }}" alt="VendorSetu logo">
+      <h2>Welcome back</h2>
+      <p>Log in to log today's sales, check your Trust Score or review loan applications.</p>
+    </div>
+    <ul>
+      <li>{{ icon("check", 20) }} Trust Score from your own sales record</li>
+      <li>{{ icon("check", 20) }} Loans of ₹15,000 → ₹25,000 → ₹50,000</li>
+      <li>{{ icon("check", 20) }} Passwords stored securely (hashed)</li>
+    </ul>
+  </aside>
+
+  <section class="auth-form">
+    <form method="post" id="login-form">
+      <h1>Log in</h1>
+      <p class="sub">Use the mobile number you registered with.</p>
+      <label>Mobile number
+        <span class="input-icon" style="display:block;margin-top:.35rem">{{ icon("phone", 18) }}
+          <input name="phone" id="phone" inputmode="numeric" maxlength="10" placeholder="10-digit mobile number" required></span>
+      </label>
+      <label>Password
+        <span class="input-icon" style="display:block;margin-top:.35rem">{{ icon("lock", 18) }}
+          <input name="password" id="password" type="password" placeholder="Your password" required></span>
+      </label>
+      <button class="btn full" type="submit">Log in {{ icon("arrow", 18) }}</button>
+      <p class="muted" style="margin-top:1rem">New here? <a href="{{ url_for('register') }}">Create an account</a></p>
+    </form>
+
+    <div class="demo-box">
+      <p>Demo accounts &mdash; click to fill</p>
+      <div class="demo-list">
+        <button type="button" data-phone="9876543210" data-pass="ramesh123">Vendor · Ramesh</button>
+        <button type="button" data-phone="9812345670" data-pass="sunita123">Vendor · Sunita</button>
+        <button type="button" data-phone="9811122233" data-pass="salim123">Vendor · Salim</button>
+        <button type="button" data-phone="9123456780" data-pass="bank123">Bank officer</button>
+        <button type="button" data-phone="9988776655" data-pass="priya123">Customer</button>
+        <button type="button" data-phone="9090909090" data-pass="muni123">Municipal officer</button>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  document.querySelectorAll(".demo-list button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      document.getElementById("phone").value = b.dataset.phone;
+      document.getElementById("password").value = b.dataset.pass;
+    });
+  });
+</script>
+{% endblock %}

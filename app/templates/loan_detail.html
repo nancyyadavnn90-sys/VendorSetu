@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Loan #{{ loan['loan_id'] }}{% endblock %}
+{% block content %}
+<a href="{{ url_for('dashboard') }}" class="chip" style="margin-bottom:1rem">{{ icon("back", 15) }} Back to dashboard</a>
+
+<div class="page-head">
+  <div>
+    <span class="eyebrow">{{ icon("file", 15) }} Loan details</span>
+    <h1 style="margin-top:.35rem">Loan #{{ loan['loan_id'] }} <span class="pill {{ loan['status']|lower }}" style="vertical-align:middle">{{ loan['status'] }}</span></h1>
+    <p>Applied {{ loan['applied_on'] }}{% if loan['disbursed_on'] %} · Disbursed {{ loan['disbursed_on'] }}{% endif %}</p>
+  </div>
+  <div class="cell-user"><span class="avatar lg">{{ borrower['name']|initials }}</span>
+    <div><strong>{{ borrower['name'] }}</strong><small>{{ borrower['phone'] }}</small></div></div>
+</div>
+
+<section class="grid four" style="margin-bottom:1.25rem">
+  <div class="card kpi"><span class="icon-badge">{{ icon("rupee") }}</span>
+    <div><div class="value">₹{{ '{:,.0f}'.format(loan['amount']) }}</div><div class="label">Principal · Tier {{ loan['tier'] }}</div></div></div>
+  <div class="card kpi"><span class="icon-badge blue">{{ icon("calendar") }}</span>
+    <div><div class="value">{{ loan['tenure_months'] }} mo</div><div class="label">@ {{ loan['interest_rate'] }}% p.a. reducing</div></div></div>
+  <div class="card kpi"><span class="icon-badge orange">{{ icon("shield") }}</span>
+    <div><div class="value">{{ loan['trust_score'] }}</div><div class="label">Trust Score at application</div></div></div>
+  <div class="card kpi"><span class="icon-badge">{{ icon("check") }}</span>
+    <div><div class="value">{{ paid }}/{{ installments|length }}</div><div class="label">EMIs paid</div></div></div>
+</section>
+
+{% if loan['remarks'] %}
+  <div class="note">{{ icon("alert", 18) }} <span><strong>Officer remarks:</strong> {{ loan['remarks'] }}</span></div>
+{% endif %}
+
+<section class="card" style="margin-top:1.25rem">
+  <div class="card-head">
+    <div class="title"><span class="icon-badge">{{ icon("calendar") }}</span><div><h2>EMI schedule</h2>
+      <span class="muted">{% if installments %}₹{{ '{:,.2f}'.format(paid_amount) }} repaid · ₹{{ '{:,.2f}'.format(outstanding) }} remaining{% else %}Generated when the bank disburses the loan{% endif %}</span></div></div>
+  </div>
+  {% if installments %}
+    <div class="progress" style="margin-bottom:1.25rem"><span style="width: {{ (paid / installments|length * 100)|round(1) }}%"></span></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>#</th><th>Due date</th><th class="num">EMI</th><th class="num">Principal</th><th class="num">Interest</th><th>Status</th><th style="width:260px"></th></tr>
+        </thead>
+        <tbody>
+          {% set ns = namespace(next_shown=false) %}
+          {% for e in installments %}
+            <tr>
+              <td><strong>{{ e['installment_no'] }}</strong></td>
+              <td>{{ e['due_date'] }}</td>
+              <td class="num">₹{{ '{:,.2f}'.format(e['emi_amount']) }}</td>
+              <td class="num">₹{{ '{:,.2f}'.format(e['principal_part']) }}</td>
+              <td class="num">₹{{ '{:,.2f}'.format(e['interest_part']) }}</td>
+              <td>
+                {% if e['status'] == 'PAID' %}
+                  <span class="pill {{ 'paid' if e['paid_on_time'] else 'late' }}">PAID {{ 'on time' if e['paid_on_time'] else 'late' }}</span>
+                {% else %}<span class="pill due">DUE</span>{% endif %}
+              </td>
+              <td>
+                {% if e['status'] == 'DUE' and not ns.next_shown and current_user['role'] == 'VENDOR'
+                      and loan['status'] in ('DISBURSED', 'DEFAULTED') %}
+                  {% set ns.next_shown = true %}
+                  <form method="post" action="{{ url_for('pay_emi', loan_id=loan['loan_id'], installment_no=e['installment_no']) }}" class="inline-form">
+                    <input name="amount" type="number" step="0.01" value="{{ e['emi_amount'] }}" required>
+                    <button class="btn small" type="submit">Pay</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="empty">The EMI schedule is generated when the bank disburses the loan.</p>
+  {% endif %}
+</section>
+{% endblock %}
