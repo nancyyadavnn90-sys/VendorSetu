@@ -142,14 +142,16 @@ def code_block(source, size=8.5):
 fig_no = [0]
 
 
-def figure(filename, caption, max_w, max_h):
+def figure(filename, caption, max_w, max_h, label=None):
+    """label (e.g. '5a') numbers a sub-figure without shifting the numbers of the figures after it."""
     path = os.path.join(DIAG, filename)
     w, h = Image.open(path).size
     scale = min(max_w / w, max_h / h)
     doc.add_picture(path, width=Inches(w * scale))
     doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
-    fig_no[0] += 1
-    p = para(f"Figure {fig_no[0]}: {caption}", size=9.5, italic=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+    if label is None:
+        fig_no[0] += 1
+    p = para(f"Figure {label or fig_no[0]}: {caption}", size=9.5, italic=True, align=WD_ALIGN_PARAGRAPH.CENTER)
     p.paragraph_format.space_after = Pt(10)
 
 
@@ -247,7 +249,8 @@ table(["Name", "Date", "Reason For Changes", "Version"],
         "of 4 modules and executed test cases", "1.0"],
        ["Nancy Yadav & team", "04-11-2026",
         "Test cases rewritten in the course Test Case Template (6 per module); 6 defects found by testing fixed; "
-        "FR-AUTH-1, FR-VEN-4, FR-VEN-5 and FR-LN-4 made more precise", "1.1"]],
+        "FR-AUTH-1, FR-VEN-4, FR-VEN-5 and FR-LN-4 made more precise; a state transition diagram for every implemented "
+        "module (Figures 5a-5d)", "1.1"]],
       [1.5, 1.0, 3.0, 0.75])
 
 # ====================================================================== 1 Introduction
@@ -808,7 +811,12 @@ para("Message names are the real function names in the code (login_user in modul
      "modules; the entity classes they read and write are the ones in the Class Diagram (Figure 2).")
 
 page_break()
-heading("B.4 State Transition Diagram", 2)
+heading("B.4 State Transition Diagrams", 2)
+para("One state transition diagram is given for each implemented module: the loan life cycle (Figure 5, Module 4), "
+     "the user account (Figure 5a, Module 1), the vendor's profile and daily sales (Figure 5b, Module 2), the Trust "
+     "Score risk band (Figure 5c, Module 3) and each EMI installment (Figure 5d, Module 4 - repayment). Rounded boxes "
+     "are states, the filled circle is the initial state, the ringed circle a final state; every arrow is labelled "
+     "**event [guard] / action**, and a loop on a box is a self-transition (the state does not change).", size=10)
 figure("05_state_transition_loan.png", "State Transition Diagram - Loan Application Life Cycle", MAXW, 3.8)
 table(["State", "Meaning", "Leaves the state when"], [
     ["PENDING", "Application submitted, waiting for the bank", "Officer approves/rejects, or vendor withdraws"],
@@ -818,6 +826,45 @@ table(["State", "Meaning", "Leaves the state when"], [
     ["DEFAULTED", "Serious delay in repayment", "All dues cleared (→ CLOSED)"],
     ["REJECTED / WITHDRAWN / CLOSED", "Final states", "-"],
 ], [2.2, 3.6, 4.6], bold_first_col=True)
+para("Code: modules/loan.py (apply_loan, review_loan, withdraw_loan, disburse_loan, pay_emi, mark_defaults). Tested "
+     "by TC-LOAN-01 to TC-LOAN-06 and TC-EMI-04, TC-EMI-06.", size=9.5, italic=True)
+
+STATE_FIGURES = [
+    ("05a_state_user_account.png", "5a", "State Transition Diagram - User Account (Module 1: Registration & Login)", [
+        ["REGISTERED (logged out)", "The account exists; fewer than 5 consecutive wrong passwords",
+         "Correct password (→ LOGGED IN); 5th consecutive wrong password (→ LOCKED)"],
+        ["LOGGED IN", "Session started; the dashboard of the user's role is shown", "logout() (→ REGISTERED)"],
+        ["LOCKED", "Locked after 5 consecutive wrong passwords; even the correct password is refused",
+         "Unlocked by support (admin feature, next increment)"],
+    ], "Code: modules/auth.py (register_user, login_user). Tested by TC-AUTH-01 to TC-AUTH-06."),
+    ("05b_state_vendor_sales.png", "5b", "State Transition Diagram - Vendor Profile & Daily Sales (Module 2)", [
+        ["NO PROFILE", "Registered vendor without a business profile; sales cannot be logged",
+         "A valid profile is saved (→ READY TO LOG)"],
+        ["READY TO LOG", "Profile saved; no sale logged for today yet", "A valid sale for today is logged "
+         "(→ SALE LOGGED TODAY)"],
+        ["SALE LOGGED TODAY", "Today's entry is stored; a second entry for today is refused",
+         "The next day begins (→ READY TO LOG)"],
+    ], "Code: modules/vendor.py (save_profile, log_daily_sale). Tested by TC-SALE-01 to TC-SALE-06."),
+    ("05c_state_trust_score.png", "5c", "State Transition Diagram - Trust Score Risk Band (Module 3)", [
+        ["HIGH RISK (0-39)", "Not eligible: a loan application is refused", "Recomputed score >= 40 (→ MEDIUM RISK)"],
+        ["MEDIUM RISK (40-69)", "Eligible for a loan", "Score >= 70 (→ LOW RISK) or score < 40 (→ HIGH RISK)"],
+        ["LOW RISK (70-100)", "Eligible for a loan", "Score < 70 (→ MEDIUM RISK)"],
+    ], "Code: modules/credit_score.py (get_trust_score, compute_trust_score, risk_band). Tested by TC-TS-01 to "
+       "TC-TS-06."),
+    ("05d_state_emi_installment.png", "5d", "State Transition Diagram - EMI Installment (Module 4: Repayment)", [
+        ["DUE", "Scheduled at disbursal; due date not yet passed", "Paid in full and in order (→ PAID ON TIME); due "
+         "date passes (→ OVERDUE)"],
+        ["OVERDUE", "Due date passed and not paid", "Paid (→ PAID LATE); default check finds it more than 90 days "
+         "late (→ OVERDUE > 90 DAYS)"],
+        ["OVERDUE > 90 DAYS", "The loan is marked DEFAULTED (Figure 5)", "Paid (→ PAID LATE)"],
+        ["PAID ON TIME / PAID LATE", "Final states; they feed the repayment part of the Trust Score", "-"],
+    ], "Code: modules/loan.py (generate_emi_schedule, pay_emi, mark_defaults). Tested by TC-EMI-01 to TC-EMI-06."),
+]
+for filename, label, caption, rows, code in STATE_FIGURES:
+    page_break()
+    figure(filename, caption, MAXW, 4.0, label=label)
+    table(["State", "Meaning", "Leaves the state when"], rows, [2.2, 3.6, 4.6], bold_first_col=True)
+    para(code, size=9.5, italic=True)
 
 page_break()
 heading("B.5 Data Flow Diagrams", 2)

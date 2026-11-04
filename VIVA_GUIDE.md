@@ -73,10 +73,15 @@ EMI formula (reducing balance): **EMI = P·r·(1+r)ⁿ / ((1+r)ⁿ − 1)**, r =
 - **alt frame** = if/else — Login mein: sahi password → dashboard; galat → error + failed attempt count (5 par lock).
 - Loan wale diagram mein: vendor apply → LoanService → TrustScoreEngine → Database → score ≥ 40 to PENDING save; phir bank officer approve → disburse → EMI schedule generate.
 
-### State Transition Diagram (Figure 5)
-- **Kya dikhata hai:** ek object (yahan **Loan**) ki life ke states aur kis event se state badalti hai.
-- Kaala dot = start, double circle = end, rounded box = state, arrow par `event [guard] / action`.
-- Example: `payEMI() [last EMI paid] / unlock next tier` → DISBURSED se CLOSED.
+### State Transition Diagrams (Figure 5, 5a-5d) - har implemented module ka ek
+- **Kya dikhata hai:** ek object ki life ke states aur kis event se state badalti hai.
+- Kaala dot = start, double circle = end, rounded box = state, arrow par `event [guard] / action`, box par loop = self-transition (state nahi badalti). Saare arrows solid hote hain.
+- **Figure 5 - Loan (Module 4):** PENDING → APPROVED → DISBURSED → CLOSED; PENDING → REJECTED / WITHDRAWN; DISBURSED → DEFAULTED → CLOSED. Example: `payEMI() [last EMI paid] / unlock next tier`.
+- **Figure 5a - User Account (Module 1):** REGISTERED (logged out) ⇄ LOGGED IN (login sahi password / logout). Galat password par loop (failed_attempts + 1); 5th galat password → LOCKED; LOCKED mein sahi password bhi reject. Unlock support karega (next increment).
+- **Figure 5b - Vendor Profile & Daily Sales (Module 2):** NO PROFILE → (profile save) → READY TO LOG → (aaj ki sale) → SALE LOGGED TODAY → (agla din) → READY TO LOG. Profile ke bina sale par error; aaj dobara sale par "Sales already logged".
+- **Figure 5c - Trust Score (Module 3):** HIGH RISK (0-39) ⇄ MEDIUM RISK (40-69) ⇄ LOW RISK (70-100). Har baar dashboard khulne ya loan apply par score recompute hota hai. HIGH RISK mein loan apply refuse.
+- **Figure 5d - EMI Installment (Module 4 repayment):** DUE → PAID ON TIME; DUE → OVERDUE → PAID LATE; OVERDUE → OVERDUE > 90 DAYS (loan DEFAULTED) → PAID LATE.
+- Har diagram ke saath SRS mein table hai (State | Meaning | Leaves the state when) aur code + test cases ka naam.
 
 ### Data Flow Diagrams (Figure 6, 7, 8)
 - **Kya dikhata hai:** data kahan se aata hai, kahan process hota hai, kahan store hota hai (control flow nahi).

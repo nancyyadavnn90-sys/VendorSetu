@@ -385,6 +385,125 @@ def loan_state_diagram():
     save(fig, out("05_state_transition_loan.png"))
 
 
+# ---------------------------------------------------------------------- state diagrams of the other modules
+def self_loop(ax, st, label, side="top", frac=0.55, rise=1.0, size=9.5, dx=0.0):
+    """Self-transition drawn as a small loop on the top or bottom edge of a state."""
+    cx = (st["x0"] + st["x1"]) / 2 + dx
+    half = (st["x1"] - st["x0"]) * frac / 2
+    x0, x1 = cx - half, cx + half
+    if side == "top":
+        y, y2 = st["y1"], st["y1"] + rise
+        text(ax, cx, y2 + 0.42 + 0.17 * label.count("\n"), label, size=size)
+    else:
+        y, y2 = st["y0"], st["y0"] - rise
+        text(ax, cx, y2 - 0.42 - 0.17 * label.count("\n"), label, size=size)
+    polyline(ax, [(x0, y), (x0, y2), (x1, y2), (x1, y)])
+
+
+def note(ax, x, y, s, size=9.5):
+    text(ax, x, y, s, size=size, ha="left", style="italic")
+
+
+def user_account_state():
+    W, H = 21.0, 12.0
+    fig, ax = canvas(W, H, "State Transition Diagram - User Account (Module 1: Registration & Login)")
+    start = initial(ax, 0.8, 6.6)
+    out_ = state(ax, 6.2, 6.6, "REGISTERED\n(logged out)", w=3.4, h=1.4)
+    inn = state(ax, 16.0, 6.6, "LOGGED IN", w=3.2)
+    locked = state(ax, 6.2, 2.0, "LOCKED", w=3.2)
+    flow(ax, start, out_, "register()\n[valid details]", size=9.5, loff=0.75)
+    flow(ax, out_, inn, "login() [correct password] /\nfailed_attempts = 0, start session", offset=0.3, size=9.5,
+         loff=0.8)
+    flow(ax, inn, out_, "logout() / end session", offset=0.3, size=9.5, loff=0.55)
+    self_loop(ax, out_, "login() [wrong password, attempts < 5] /\nfailed_attempts + 1, 'Invalid mobile number "
+              "or password'", rise=1.1)
+    flow(ax, out_, locked, "login() [5th wrong password] /\n'Account locked after 5 failed attempts'",
+         offset=-0.35, size=9.5, loff=-2.6)
+    flow(ax, locked, out_, "unlock() by support /\nfailed_attempts = 0\n(admin, next increment)", offset=-0.35, size=9.5,
+         loff=-1.75)
+    self_loop(ax, locked, "login() [any password] / 'Account locked'", side="bottom", rise=0.8)
+    note(ax, 10.8, 3.2, "Invalid registration input (name, mobile, password,\nrole) creates no account: "
+         "the user stays unregistered.\nFR-AUTH-1 to FR-AUTH-7, NFR-SEC-2")
+    save(fig, out("05a_state_user_account.png"))
+
+
+def vendor_sales_state():
+    W, H = 24.0, 11.0
+    fig, ax = canvas(W, H, "State Transition Diagram - Vendor Profile & Daily Sales (Module 2)")
+    y = 5.6
+    start = initial(ax, 0.8, y)
+    nop = state(ax, 4.9, y, "NO PROFILE", w=3.2)
+    ready = state(ax, 12.4, y, "READY TO LOG\n(no sale today)", w=3.6, h=1.4)
+    logged = state(ax, 20.2, y, "SALE LOGGED\nTODAY", w=3.4, h=1.4)
+    flow(ax, start, nop, "register()\nas Vendor", size=9.5, loff=0.75)
+    flow(ax, nop, ready, "saveProfile()\n[valid details]", size=9.5, loff=0.75)
+    flow(ax, ready, logged, "logSale(today)\n[valid] / store sale", offset=0.3, size=9.5, loff=0.8)
+    flow(ax, logged, ready, "[next day begins]", offset=0.3, size=9.5, loff=0.5)
+    self_loop(ax, nop, "saveProfile() [invalid] / error\nlogSale() / 'Complete your\nvendor profile first'",
+              rise=1.0)
+    self_loop(ax, ready, "logSale() [invalid amount, date\nor mode] / error, nothing saved", rise=1.0)
+    self_loop(ax, logged, "logSale(today) / 'Sales\nalready logged for this date'", rise=1.0)
+    self_loop(ax, ready, "saveProfile() [valid] /\nupdate profile", side="bottom", rise=0.8)
+    note(ax, 1.0, 1.9, "Valid sale: amount > 0 and <= Rs 1,00,000; date not in the future and not more than 90 days "
+         "old; mode CASH or UPI.  FR-VEN-1 to FR-VEN-7")
+    note(ax, 1.0, 1.1, "A valid sale for an earlier date (back-filling) is stored without changing the state; the "
+         "next day starts again in READY TO LOG.")
+    save(fig, out("05b_state_vendor_sales.png"))
+
+
+def trust_score_state():
+    W, H = 24.0, 11.0
+    fig, ax = canvas(W, H, "State Transition Diagram - Trust Score Risk Band (Module 3)")
+    y = 5.8
+    start = initial(ax, 0.8, y)
+    high = state(ax, 5.4, y, "HIGH RISK\nscore 0-39\n(not eligible)", w=3.6, h=1.7)
+    med = state(ax, 13.0, y, "MEDIUM RISK\nscore 40-69\n(eligible)", w=3.6, h=1.7)
+    low = state(ax, 20.6, y, "LOW RISK\nscore 70-100\n(eligible)", w=3.6, h=1.7)
+    flow(ax, start, high, "saveProfile() /\ncompute score\n(new vendor: 20-30)", size=9.5, loff=1.05)
+    flow(ax, high, med, "recompute()\n[score >= 40]", offset=0.35, size=9.5, loff=0.8)
+    flow(ax, med, high, "recompute()\n[score < 40]", offset=0.35, size=9.5, loff=0.8)
+    flow(ax, med, low, "recompute()\n[score >= 70]", offset=0.35, size=9.5, loff=0.8)
+    flow(ax, low, med, "recompute()\n[score < 70]", offset=0.35, size=9.5, loff=0.8)
+    self_loop(ax, med, "applyLoan() allowed (score >= 40)", rise=0.9)
+    self_loop(ax, high, "applyLoan() / 'Trust score n is\nbelow 40. Not eligible'", rise=0.9)
+    self_loop(ax, low, "applyLoan() allowed", rise=0.9)
+    note(ax, 1.0, 1.9, "recompute() runs whenever the dashboard is opened or a loan is applied for.  Score = sales "
+         "consistency (40) + repayment (40) + vouching (10) + tenure (10).")
+    note(ax, 1.0, 1.1, "Raises the score: selling on more days, EMIs paid on time, vouches (max 3), years of vending "
+         "(max 5).   Lowers it: fewer active days in the last 30, late or overdue EMIs.")
+    save(fig, out("05c_state_trust_score.png"))
+
+
+def emi_state():
+    W, H = 24.0, 13.0
+    fig, ax = canvas(W, H, "State Transition Diagram - EMI Installment (Module 4: Repayment)")
+    yt, yb = 8.0, 3.4
+    start = initial(ax, 0.8, yt)
+    due = state(ax, 5.2, yt, "DUE", w=2.8)
+    over = state(ax, 12.6, yt, "OVERDUE", w=3.0)
+    over90 = state(ax, 20.3, yt, "OVERDUE > 90 DAYS\n(loan DEFAULTED)", w=4.0, h=1.4)
+    ontime = state(ax, 5.2, yb, "PAID ON TIME", w=3.4)
+    late = state(ax, 16.4, yb, "PAID LATE", w=3.2)
+    e1, e2 = final(ax, 5.2, 1.0), final(ax, 16.4, 1.0)
+    flow(ax, start, due, "disburse() /\ncreate EMI\nschedule", size=9.5, loff=1.0)
+    flow(ax, due, over, "[due date passed]", size=9.5, loff=0.4)
+    flow(ax, over, over90, "markDefaults()\n[> 90 days after\ndue date]", size=9.5, loff=0.95)
+    flow(ax, due, ontime, "payEMI() [amount >= EMI,\nearlier EMIs paid]", size=9.5, loff=-2.0)
+    flow(ax, over, late, "payEMI()\n[amount >= EMI]", size=9.5, loff=-1.1)
+    flow(ax, over90, late, "payEMI()\n[amount >= EMI]", size=9.5, loff=1.1)
+    flow(ax, ontime, e1)
+    flow(ax, late, e2)
+    self_loop(ax, due, "payEMI() [amount < EMI or an earlier\nEMI unpaid] / error message", rise=1.0)
+    self_loop(ax, over, "payEMI() [amount < EMI or an earlier\nEMI unpaid] / error message", rise=1.0)
+    note(ax, 6.9, 5.4, "Paying a PAID installment again is\nrejected ('Installment already paid').\n"
+         "When the last installment is paid,\nthe loan becomes CLOSED (Figure 5).\nFR-EMI-1 to FR-EMI-6, FR-BNK-7")
+    save(fig, out("05d_state_emi_installment.png"))
+
+
+# one state diagram per implemented module (the loan life cycle is loan_state_diagram above)
+STATE_DIAGRAMS = [user_account_state, vendor_sales_state, trust_score_state, emi_state]
+
+
 # ====================================================================== DFD
 def dfd_level0():
     W, H = 25.0, 17.0
@@ -542,6 +661,8 @@ if __name__ == "__main__":
     login_sequence()
     loan_sequence()
     loan_state_diagram()
+    for make in STATE_DIAGRAMS:
+        make()
     dfd_level0()
     dfd_level1()
     dfd_level2_trust_score()
