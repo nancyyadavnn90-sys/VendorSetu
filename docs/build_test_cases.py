@@ -249,7 +249,8 @@ table(["Item", "Details"], [
      "shown on screen. Unit testing of the Trust Score formula (TC-TS-02 to TC-TS-06)."],
     ["Test runs", f"Run 1 - the first version of the code (git commit 0ce1911): {len(failed1)} test cases FAILED; "
      f"{len(defects)} defects were logged (Section 7).\nRun 2 - after fixing them, all test cases were executed "
-     "again (regression testing). Sections 2-6 show Run 2."],
+     "again (regression testing).\nOn the test case pages (Sections 2-6) every step that FAILED in Run 1 is marked "
+     "'Fail (Run 1)' in red and shows both outputs: the wrong Run-1 output and the correct output after the fix."],
     ["Environment / tools", "Windows 11, Python 3.11, Flask 3.1, SQLite; pytest and the Flask test client. "
      "tests/run_test_cases.py performs every step on a fresh database and copies the on-screen result into the "
      "Actual Output column - nothing in that column is typed by hand."],
@@ -285,7 +286,8 @@ def header_box(r):
         ("Test Case #:", r["id"], "Test Case Name:", r["name"], "Page:", "1 of 1"),
         ("System:", "VendorSetu", "Subsystem:", meta["subsystem"], "Type:", r["level"] + " test"),
         ("Designed by:", "Nancy Yadav & team", "Design Date:", executed, "Requirements:", ", ".join(r["reqs"])),
-        ("Executed by:", "Nancy Yadav & team", "Execution Date:", executed, "Result:", r["result"]),
+        ("Executed by:", "Nancy Yadav & team", "Execution Date:", executed, "Result:",
+         f"Run 1: FAIL → Run 2: {r['result']}" if failed_in_run1(r) else r["result"]),
         ("Short Description:", r["description"], "", "", "", ""),
     ]
     widths = [1.25, 2.1, 1.25, 3.25, 1.05, 1.55]
@@ -295,7 +297,12 @@ def header_box(r):
             c.width = Inches(widths[ci])
             tight(rich(c.paragraphs[0], v, size=9.5, bold=ci % 2 == 0, color=None if ci % 2 == 0 else BLUE))
         no_split(hdr.rows[ri])
-    mark(hdr.rows[3].cells[5], r["result"] == "PASS")
+    if failed_in_run1(r):
+        shade(hdr.rows[3].cells[5], "FCE4C4")
+        for run in hdr.rows[3].cells[5].paragraphs[0].runs:
+            run.bold = True
+    else:
+        mark(hdr.rows[3].cells[5], r["result"] == "PASS")
     last = hdr.rows[4].cells
     merged = last[1].merge(last[5])
     for extra in merged.paragraphs[1:]:
@@ -307,11 +314,32 @@ def header_box(r):
     gap.paragraph_format.line_spacing = Pt(8)
 
 
-def comment(r, s):
-    first = run1[r["id"]]["steps"][s["no"] - 1]
+def failed_in_run1(r):
+    return run1[r["id"]]["result"] == "FAIL"
+
+
+def first_run(r, s):
+    return run1[r["id"]]["steps"][s["no"] - 1]
+
+
+def actual_text(r, s):
+    """A step that failed in Run 1 shows both outputs: the wrong one and the one after the fix."""
+    first = first_run(r, s)
     if first["result"] == "FAIL":
-        return f"{s['note']}\nRun 1: FAIL ({s['defect'] or 'see Section 7'}, fixed)" if s["note"] else \
-            f"Run 1: FAIL ({s['defect']}, fixed)"
+        return f"**Run 1:** {first['actual']}\n**Run 2 (after fix):** {s['actual']}"
+    return s["actual"]
+
+
+def result_text(r, s):
+    if first_run(r, s)["result"] == "FAIL":
+        return f"Fail (Run 1)\n{s['result'].title()} (Run 2)"
+    return s["result"].title()
+
+
+def comment(r, s):
+    if first_run(r, s)["result"] == "FAIL":
+        what = f"defect {s['defect']} logged" if s["defect"] else "wrong data stored (defect in the steps above)"
+        return f"{s['note']}\nRun 1 FAILED: {what}; fixed and re-tested".lstrip("\n")
     return s["note"]
 
 
@@ -327,10 +355,11 @@ for n, key in enumerate(ORDER, start=2):
         t = table(["Step", "Action", "Input (Test Data)", "Expected System Response", "Actual Output", "Pass/ Fail",
                    "Comment"],
                   [[str(s["no"]), f"**{s['action']}**" if s["action"].startswith("Check post-condition") else s["action"],
-                    s["data"], s["expected"], s["actual"], s["result"].title(), comment(r, s)] for s in r["steps"]],
-                  [0.42, 1.95, 1.7, 2.05, 2.05, 0.55, 1.73], size=8.5)
-        for row in t.rows[1:]:
-            mark(row.cells[5], row.cells[5].text == "Pass")
+                    s["data"], s["expected"], actual_text(r, s), result_text(r, s), comment(r, s)]
+                   for s in r["steps"]],
+                  [0.4, 1.85, 1.6, 1.95, 2.2, 0.84, 1.61], size=8.5)
+        for row, s in zip(t.rows[1:], r["steps"]):
+            mark(row.cells[5], first_run(r, s)["result"] != "FAIL" and s["result"] == "PASS")
         box("Post-conditions", r["post"], numbered=True)
 
 # ---------------------------------------------------------------- 7 defect report

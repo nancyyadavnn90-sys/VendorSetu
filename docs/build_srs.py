@@ -1000,7 +1000,8 @@ for i, key in enumerate(order, start=2):
             ("Test Case #:", r["id"], "Test Case Name:", r["name"], "Page:", "1 of 1"),
             ("System:", "VendorSetu", "Subsystem:", meta["subsystem"], "Type:", r["level"] + " test"),
             ("Designed by:", "Nancy Yadav & team", "Design Date:", executed_on, "Requirements:", ", ".join(r["reqs"])),
-            ("Executed by:", "Nancy Yadav & team", "Execution Date:", executed_on, "Result:", r["result"]),
+            ("Executed by:", "Nancy Yadav & team", "Execution Date:", executed_on, "Result:",
+             f"Run 1: FAIL → Run 2: {r['result']}" if run1[r["id"]]["result"] == "FAIL" else r["result"]),
             ("Short Description:", r["description"], "", "", "", ""),
         ]
         widths = [1.2, 2.0, 1.2, 3.25, 1.05, 1.55]
@@ -1019,23 +1020,34 @@ for i, key in enumerate(order, start=2):
             extra._p.getparent().remove(extra._p)
         merged.paragraphs[0].text = ""
         rich(merged.paragraphs[0], r["description"], size=8.5)
-        set_cell_bg(hdr.rows[3].cells[5], "D9F0E1" if r["result"] == "PASS" else "F8D7D3")
+        set_cell_bg(hdr.rows[3].cells[5], "FCE4C4" if run1[r["id"]]["result"] == "FAIL"
+                    else "D9F0E1" if r["result"] == "PASS" else "F8D7D3")
         p = para("**Pre-conditions:** " + "; ".join(r["pre"]), size=8.5, space_after=2)
         p.paragraph_format.space_before = Pt(3)
         p.paragraph_format.keep_with_next = True
 
+        def run1_failed(s_):
+            return run1[r["id"]]["steps"][s_["no"] - 1]["result"] == "FAIL"
+
+        def actual(s_):
+            if run1_failed(s_):
+                return (f"**Run 1:** {run1[r['id']]['steps'][s_['no'] - 1]['actual']}\n"
+                        f"**Run 2 (after fix):** {s_['actual']}")
+            return s_["actual"]
+
         def comment(s_):
-            first = run1[r["id"]]["steps"][s_["no"] - 1]
             note = s_["note"]
-            if first["result"] == "FAIL":
-                note += ("\n" if note else "") + f"Run 1: FAIL ({s_['defect'] or 'see E.8'}, fixed)"
+            if run1_failed(s_):
+                what = f"defect {s_['defect']} logged" if s_["defect"] else "wrong data stored (defect in the steps above)"
+                note += ("\n" if note else "") + f"Run 1 FAILED: {what}; fixed and re-tested"
             return note
 
         t = table(["Step", "Action", "Input (Test Data)", "Expected System Response", "Actual Output", "Pass/ Fail",
                    "Comment"],
-                  [[str(s_["no"]), s_["action"], s_["data"], s_["expected"], s_["actual"], s_["result"].title(),
+                  [[str(s_["no"]), s_["action"], s_["data"], s_["expected"], actual(s_),
+                    f"Fail (Run 1)\n{s_['result'].title()} (Run 2)" if run1_failed(s_) else s_["result"].title(),
                     comment(s_)] for s_ in r["steps"]],
-                  [0.4, 1.85, 1.6, 2.0, 2.0, 0.55, 1.85], font_size=7.5)
+                  [0.4, 1.8, 1.55, 1.9, 2.15, 0.8, 1.65], font_size=7.5)
         # keep the whole test case (header, pre-conditions, steps, post-conditions) on one page
         for tbl in (hdr, t):
             for row in tbl.rows:
@@ -1043,8 +1055,8 @@ for i, key in enumerate(order, start=2):
                 for cell in row.cells:
                     for cp in cell.paragraphs:
                         cp.paragraph_format.keep_with_next = True
-        for row in t.rows[1:]:
-            set_cell_bg(row.cells[5], "D9F0E1" if row.cells[5].text == "Pass" else "F8D7D3")
+        for row, s_ in zip(t.rows[1:], r["steps"]):
+            set_cell_bg(row.cells[5], "D9F0E1" if s_["result"] == "PASS" and not run1_failed(s_) else "F8D7D3")
         t._tbl.getnext().getparent().remove(t._tbl.getnext())       # drop the spacer paragraph after the table
         p = para("**Post-conditions:** " + " ".join(f"{k}. {x}" for k, x in enumerate(r["post"], start=1)), size=8.5,
                  space_after=4)
