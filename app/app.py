@@ -218,9 +218,15 @@ def withdraw_loan(loan_id):
     return redirect(url_for("dashboard"))
 
 
+LOAN_VIEW_ROLES = ("VENDOR", "BANK_OFFICER")   # defect DEF-05: customers / municipal officers could see loans
+
+
 @app.route("/loan/<int:loan_id>")
 @login_required()
 def loan_detail(loan_id):
+    if g.user["role"] not in LOAN_VIEW_ROLES:
+        flash("You are not allowed to open that page.", "error")
+        return redirect(url_for("dashboard"))
     try:
         record = loan.get_loan(db(), loan_id)
     except ValidationError as e:
@@ -241,9 +247,16 @@ def loan_detail(loan_id):
 @app.route("/vendor/loan/<int:loan_id>/pay/<int:installment_no>", methods=["POST"])
 @login_required("VENDOR")
 def pay_emi(loan_id, installment_no):
+    # defect DEF-06: for a missing or someone else's loan the error used to be shown twice, because the
+    # redirect to the loan page reported a second error; such requests now go back to the dashboard.
     try:
-        if loan.get_loan(db(), loan_id)["vendor_id"] != g.user["user_id"]:
+        record = loan.get_loan(db(), loan_id)
+        if record["vendor_id"] != g.user["user_id"]:
             raise ValidationError("You can only pay your own loans")
+    except ValidationError as e:
+        flash(str(e), "error")
+        return redirect(url_for("dashboard"))
+    try:
         result = loan.pay_emi(db(), loan_id, installment_no, request.form.get("amount"))
         msg = f"EMI #{installment_no} paid {'on time' if result['on_time'] else 'late'}."
         if result["loan_closed"]:

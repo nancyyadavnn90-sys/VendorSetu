@@ -100,17 +100,27 @@ EMI formula (reducing balance): **EMI = P·r·(1+r)ⁿ / ((1+r)ⁿ − 1)**, r =
 
 ## 7. Testing (kya bolna hai)
 
-- **34 documented test cases**, 5 modules (Login 7, Sales 7, Trust Score 6, Loan 7, EMI 7) — sab **PASS**.
-- Har case mein: TC ID, Scenario, Type, Pre-condition, Test Steps, Input, Expected Output, Actual Output, Remark.
-- Alag document: `docs/Test_Cases_VendorSetu.docx` (template Doc T_01 format) + SRS Appendix E.
-- **29 System test cases** app ke through (form bharo, button dabao) — Expected/Actual wahi message hai jo screen par aata hai, isliye sir demo mein khud try kar sakte hain.
-- **5 Unit test cases** Trust Score formula ke — Expected mein hand calculation likhi hai (40 + 20 + 10 + 10 = 80).
-- Techniques: **equivalence partitioning**, **boundary value analysis** (score 39 → not eligible, 40 → eligible), negative testing, security testing (vendor officer page nahi khol sakta; forged payment request reject).
-- **Actual Output haath se nahi likha** — `tests/run_test_cases.py` app chalake screen ka message copy karta hai.
-- **Post-conditions bhi check hote hain** — galat input par database mein koi row nahi judti; password plain text mein save nahi hota.
-- **Traceability matrix** (test doc Section 8): har requirement (FR-AUTH-1 …) kis test case se verify hui.
-- Total `pytest`: **36 passed** (34 + 2 integration).
-- Sir demo data par case repeat karein to loan number (#1) alag aayega kyunki demo mein pehle se loans hain — baaki message same.
+- **92 documented test cases**, 5 modules (Login 20, Profile & Sales 19, Trust Score 14, Loan 21, EMI 18) - sab **PASS**.
+- Har case mein: TC ID, Scenario, Type (level + technique), Pre-condition, Test Steps, Input, Expected Output, Actual Output, Remark.
+- Alag document: `docs/Test_Cases_VendorSetu.docx` / `.pdf` (template Doc T_01 format) + SRS Appendix E.
+- Techniques: **Positive**, **Negative (equivalence partitioning)** - har invalid class (empty, galat format, abc, nan/inf, range ke bahar), **BVA** - har limit ke dono taraf (name 50/51, password 5/6, amount 1,00,000/1,00,000.01, date 90/91 din purani, score 39/40 aur 69/70, loan 15,000/15,000.01, EMI 1 paisa kam, 90/91 din overdue), **Combination** (ek saath kai galat fields), **Security** (role check, forged request, SQL injection).
+- **Combination testing:** 7 forms ke har field ki valid + invalid values ka har combination (cartesian product) = **1,894 combinations** automatically chalaye. Har combination ka expected result ek alag "oracle" (SRS rules se likha) batata hai. Sab match + 0 crash.
+- **Test cases FAIL bhi hue the (Run 1):** wahi tests pehle version (git commit 0ce1911) par chalaye to **9 cases FAIL** hue aur 327 combinations galat aaye (9 baar server crash). 6 defects log kiye (DEF-01 ... DEF-06), fix kiye, phir dobara chalaye (regression) -> sab PASS. Test doc Section 9 mein asli Run-1 output hai.
+  - DEF-01: amount mein `nan` -> server crash (HTTP 500). DEF-02: 1900 ki date wali sale accept. DEF-03: EMI `nan`/`inf` se PAID. DEF-04: name "12345" accept. DEF-05: customer kisi vendor ka loan page dekh sakta tha. DEF-06: error message do baar.
+- **Actual Output haath se nahi likha** - `tests/run_test_cases.py` app chalake screen ka message copy karta hai.
+- **Post-conditions bhi check hote hain** - galat input par database mein kuch nahi badalta; password plain text mein save nahi hota.
+- **Traceability matrix** (test doc Section 10): har requirement kis test case se verify hui.
+- Total `pytest`: **101 passed** (92 cases + 7 combination suites + 2 integration).
+
+### Sir ke saamne tests chalane ke commands
+```
+python tests/run_test_cases.py --module AUTH --details   (ek module, input/expected/actual ke saath)
+python tests/run_test_cases.py --before-fix --no-combinations   (purana code: 9 FAIL dikhenge)
+python tests/run_test_cases.py                            (naya code: 92/92 PASS + 1894 combinations, ~1 min)
+python -m pytest tests -v                                 (101 passed, ~2 min)
+```
+- Live fail dikhana ho to: `app/modules/auth.py` mein `MAX_FAILED_ATTEMPTS = 5` ko 3 karo, save karo, `python tests/run_test_cases.py --module AUTH` -> TC-AUTH-07 aur TC-AUTH-19 FAIL. Wapas 5 karo -> PASS.
+- Sir demo data par case repeat karein to loan number (#1) alag aayega kyunki demo mein pehle se loans hain - baaki message same.
 
 ## 8. Demo ka order (5 minute)
 
@@ -120,7 +130,7 @@ EMI formula (reducing balance): **EMI = P·r·(1+r)ⁿ / ((1+r)ⁿ − 1)**, r =
 4. Sunita ka pending loan bina remarks Reject karke dikhao → error "Remarks are required when rejecting".
 5. Wapas Ramesh → loan View → EMI #1 Pay → "paid on time".
 6. Ek galat case: 20,000 apply karo → "Amount exceeds Tier 1 limit".
-7. Terminal mein `python -m pytest tests -v` → 36 passed.
+7. Terminal mein `python -m pytest tests -v` → 101 passed.
 
 ## 9. Possible viva questions
 

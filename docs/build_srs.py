@@ -494,7 +494,8 @@ FEATURES = [
       ["Fifth consecutive wrong password", "Locks the account and shows the lock message"],
       ["User opens a page of another role", "Redirects to own dashboard with \"You are not allowed to open that page\""]],
      [["FR-AUTH-1", "The system shall let a new user register with full name, mobile number, password and one role: "
-       "Vendor, Bank/NBFC Officer, Municipal Officer or Customer."],
+       "Vendor, Bank/NBFC Officer, Municipal Officer or Customer. The name shall have at most 50 characters and "
+       "contain only letters, spaces, dots and apostrophes."],
       ["FR-AUTH-2", "The mobile number shall be a valid 10-digit Indian number starting with 6-9 and shall be unique; "
        "otherwise the system shall show \"Enter a valid 10-digit mobile number\" or \"Mobile number already "
        "registered\"."],
@@ -519,8 +520,9 @@ FEATURES = [
       ["FR-VEN-2", "Business type and vending zone are mandatory; years of vending shall be 0-60."],
       ["FR-VEN-3", "A vendor shall be able to log one sales entry per day with date, amount and payment mode "
        "(Cash or UPI)."],
-      ["FR-VEN-4", "The amount shall be greater than 0 and not more than ₹1,00,000 per day."],
-      ["FR-VEN-5", "The sale date shall not be in the future, and only one entry per date is allowed."],
+      ["FR-VEN-4", "The amount shall be a valid number greater than 0 and not more than ₹1,00,000 per day."],
+      ["FR-VEN-5", "The sale date shall not be in the future nor more than 90 days old, and only one entry per date "
+       "is allowed."],
       ["FR-VEN-6", "Sales can be logged only after the profile is complete."],
       ["FR-VEN-7", "The dashboard shall show active days, total and daily average sales for the last 30 days and the "
        "10 most recent entries."]]),
@@ -549,7 +551,7 @@ FEATURES = [
       ["FR-LN-2", "Tier limits: Tier 1 up to ₹15,000 for 12 months; Tier 2 up to ₹25,000 for 18 months; Tier 3 up to "
        "₹50,000 for 36 months."],
       ["FR-LN-3", "The eligible tier shall be (number of fully repaid loans + 1), at most 3."],
-      ["FR-LN-4", "The amount shall be greater than 0 and not more than the tier limit."],
+      ["FR-LN-4", "The amount shall be a valid number greater than 0 and not more than the tier limit."],
       ["FR-LN-5", "A vendor may have only one active loan (Pending, Approved, Disbursed or Defaulted) at a time."],
       ["FR-LN-6", "The application shall store the tier, tenure, interest rate and Trust Score at the time of "
        "applying, with status PENDING; the vendor may withdraw it while it is PENDING."]]),
@@ -919,6 +921,10 @@ with open(os.path.join(ROOT, "tests", "test_results.json"), encoding="utf-8") as
 pytest_run = subprocess.run([sys.executable, "-m", "pytest", "tests", "-q"], cwd=ROOT, capture_output=True,
                             text=True)
 pytest_summary = [ln for ln in pytest_run.stdout.strip().splitlines() if "passed" in ln or "failed" in ln][-1]
+with open(os.path.join(ROOT, "tests", "test_results_before_fix.json"), encoding="utf-8") as f:
+    before = json.load(f)
+failed1 = [r for r in before["results"] if r["remark"] == "FAIL"]
+run1 = {r["id"]: r["remark"] for r in before["results"]}
 
 new_section(landscape=True, margin=0.7)
 heading("Appendix E: Test Cases and Results", 1)
@@ -931,14 +937,24 @@ for b in [
     "page, so every case can be repeated by hand in the demo.",
     f"**Unit testing ({n_unit} cases):** the Trust Score formula is tested directly; the Expected Output shows the "
     "hand calculation (e.g. 40 + 20 + 10 + 10 = 80).",
-    "**Design techniques:** equivalence partitioning (valid / invalid classes), boundary-value analysis (score "
-    "39 / 40, zero amount, amount above the tier limit), negative and security testing (role check, forged "
-    "payment requests).",
+    "**Design techniques:** positive testing; equivalence partitioning (every invalid class: empty, wrong format, "
+    "non-numeric, nan / inf, out of range); boundary-value analysis on both sides of every limit (name 50 / 51, "
+    "password 5 / 6, amount 1,00,000 / 1,00,000.01, date 90 / 91 days, score 39 / 40 and 69 / 70, tier limit "
+    "15,000 / 15,000.01, 90 / 91 days overdue); combination testing; security testing (role check, forged "
+    "requests, SQL injection).",
+    f"**Combination testing:** {sum(c['combinations'] for c in results['combinations']):,} combinations of valid and "
+    f"invalid values in {len(results['combinations'])} forms (every value of every field with every value of the "
+    f"others) were submitted; {sum(c['matched'] for c in results['combinations']):,} gave exactly the result "
+    "required by the SRS, with no crash and no invalid data stored.",
+    f"**Defects found and fixed:** the first version of the code (commit 0ce1911) failed {len(failed1)} of these "
+    f"test cases; {len(results['defects'])} defects (e.g. 'nan' as an amount crashed the app, customers could "
+    "open a vendor's loan page) were logged, fixed and re-tested - see E.8.",
     "**Integration testing:** two end-to-end scenarios (register → login → profile → sale → apply → approve → "
     "disburse → pay EMI; role-based access).",
     "**Test automation:** tests/run_test_cases.py executes every case on a fresh, empty database and copies the "
     "on-screen result into the Actual Output column; the same cases run under pytest.",
-    f"**Latest automated run:** pytest - {pytest_summary} (documented cases + integration tests). The full "
+    f"**Latest automated run:** pytest - {pytest_summary} (documented cases, combination suites and integration "
+    "tests). The full "
     "step-by-step version of these cases, with a requirements traceability matrix, is in the separate Test Case "
     "Document (docs/Test_Cases_VendorSetu.docx).",
 ]:
@@ -973,12 +989,14 @@ for i, key in enumerate(order, start=2):
     para("**Pre-conditions:** " + " ".join(meta["pre"]), size=10, space_after=6)
 
     t = table(["TC ID", "Test Scenario", "Type", "Input (Test Data)", "Expected Output", "Actual Output", "Remark"],
-              [[r["id"], r["scenario"] + ("" if r["pre"] == "-" else f"\nPre: {r['pre']}"), r["level"], r["input"],
-                r["expected"], r["actual"], r["remark"]] for r in rows],
-              [0.8, 1.9, 0.55, 1.75, 1.9, 1.9, 0.6], font_size=8)
+              [[r["id"], r["scenario"] + ("" if r["pre"] == "-" else f"\nPre: {r['pre']}"),
+                f"{r['level']}\n{r['technique']}", r["input"], r["expected"], r["actual"],
+                r["remark"] + (f"\n(Run 1: FAIL, {r['defect']})" if run1.get(r["id"]) == "FAIL" else "")]
+               for r in rows],
+              [0.8, 1.85, 0.7, 1.7, 1.85, 1.85, 0.65], font_size=8)
     for row in t.rows[1:]:
         remark = row.cells[6]
-        set_cell_bg(remark, "D9F0E1" if remark.text == "PASS" else "F8D7D3")
+        set_cell_bg(remark, "D9F0E1" if remark.text.startswith("PASS") else "F8D7D3")
         remark.paragraphs[0].runs[0].bold = True
     para("**Post-conditions:** " + " ".join(meta["post"]), size=10)
     passed = sum(r["remark"] == "PASS" for r in rows)
@@ -1000,6 +1018,14 @@ table(["Integration test (tests/test_integration.py)", "What it verifies", "Resu
 ], [3.0, 5.6, 1.0])
 para("Actual outputs above are recorded by executing the code, not typed by hand; re-running "
      "tests/run_test_cases.py and docs/build_srs.py regenerates these tables.", size=10)
+
+heading(f"E.{len(order) + 3} Defects Found by Testing", 2)
+para(f"Run 1 executed the same cases on the first version of the code (git commit 0ce1911): {len(failed1)} cases "
+     "FAILED. Each was logged as a defect, fixed and re-tested (Run 2, results above). The full Run-1 outputs are in "
+     "Section 9 of the Test Case Document.", size=10)
+table(["Defect", "Severity", "Found by", "What happened in Run 1", "Fix", "Re-test"],
+      [[d["id"], d["severity"], ", ".join(d["cases"]), d["found"], d["fix"], "PASS - closed"]
+       for d in results["defects"]], [0.7, 0.7, 1.1, 3.3, 3.3, 0.9], font_size=8.5)
 
 doc.save(OUT)
 print("Saved", OUT)

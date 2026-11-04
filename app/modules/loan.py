@@ -15,7 +15,7 @@ Loan life cycle (see the State Transition Diagram in the SRS):
 import calendar
 from datetime import date, timedelta
 
-from database import ValidationError
+from database import ValidationError, parse_number
 from modules.auth import get_user
 from modules.credit_score import MIN_SCORE_FOR_LOAN, get_trust_score
 
@@ -80,10 +80,7 @@ def get_loan(conn, loan_id):
 def apply_loan(conn, vendor_id, amount, today=None):
     """Vendor submits a loan application; returns the new loan_id (FR-LN-1 to FR-LN-6)."""
     today = today or date.today()
-    try:
-        amount = float(amount)
-    except (TypeError, ValueError):
-        raise ValidationError("Loan amount must be a number")
+    amount = parse_number(amount, "Loan amount must be a number")
 
     active = conn.execute(
         f"SELECT 1 FROM loans WHERE vendor_id = ? AND status IN ({','.join('?' * len(ACTIVE_STATUSES))})",
@@ -143,10 +140,7 @@ def pay_emi(conn, loan_id, installment_no, amount, paid_date=None):
     if earlier:
         raise ValidationError(f"Pay earlier installment #{earlier} first")
 
-    try:
-        amount = float(amount)
-    except (TypeError, ValueError):
-        raise ValidationError("Payment amount must be a number")
+    amount = parse_number(amount, "Payment amount must be a number")
     if amount + 0.001 < emi["emi_amount"]:
         raise ValidationError(f"Amount is less than EMI due of Rs {emi['emi_amount']:.2f}")
 

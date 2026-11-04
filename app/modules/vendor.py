@@ -4,10 +4,11 @@ SRS reference: Section 4.2 (FR-VEN-1 to FR-VEN-7)
 """
 from datetime import date, timedelta
 
-from database import ValidationError
+from database import ValidationError, parse_number
 
 PAYMENT_MODES = ("CASH", "UPI")
 MAX_DAILY_SALE = 100000          # FR-VEN-4: a street vendor's single-day sale above this is treated as a typo
+MAX_BACKDATE_DAYS = 90           # FR-VEN-5: older entries (e.g. 1900-01-01) cannot be verified (defect DEF-02)
 
 
 def save_profile(conn, vendor_id, business_type, vending_zone, years_vending, upi_id=""):
@@ -48,10 +49,7 @@ def log_daily_sale(conn, vendor_id, sale_date, amount, payment_mode, today=None)
         sale_day = date.fromisoformat(str(sale_date))
     except ValueError:
         raise ValidationError("Enter a valid date (YYYY-MM-DD)")
-    try:
-        amount = float(amount)
-    except (TypeError, ValueError):
-        raise ValidationError("Sale amount must be a number")
+    amount = parse_number(amount, "Sale amount must be a number")
 
     if amount <= 0:
         raise ValidationError("Sale amount must be greater than 0")
@@ -59,6 +57,8 @@ def log_daily_sale(conn, vendor_id, sale_date, amount, payment_mode, today=None)
         raise ValidationError("Sale amount cannot exceed Rs 1,00,000 per day")
     if sale_day > today:
         raise ValidationError("Sale date cannot be in the future")
+    if (today - sale_day).days > MAX_BACKDATE_DAYS:
+        raise ValidationError(f"Sale date cannot be more than {MAX_BACKDATE_DAYS} days old")
     if payment_mode not in PAYMENT_MODES:
         raise ValidationError("Payment mode must be CASH or UPI")
     if get_profile(conn, vendor_id) is None:

@@ -12,6 +12,18 @@ ROLES = ("VENDOR", "BANK_OFFICER", "MUNICIPAL_OFFICER", "CUSTOMER")
 MAX_FAILED_ATTEMPTS = 5
 
 PHONE_PATTERN = re.compile(r"^[6-9]\d{9}$")       # Indian 10-digit mobile number
+NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z .']*$")  # letters, spaces, dots, apostrophes ('Mohd. Salim')
+MAX_NAME_LENGTH = 50
+
+
+def validate_name(name):
+    """FR-AUTH-1: a person's name (defect DEF-04: '12345' and 300-character names were accepted)."""
+    if not name:
+        raise ValidationError("Name is required")
+    if len(name) > MAX_NAME_LENGTH:
+        raise ValidationError(f"Name must be at most {MAX_NAME_LENGTH} characters")
+    if not NAME_PATTERN.match(name):
+        raise ValidationError("Name can contain only letters, spaces and dots")
 
 
 def validate_password(password):
@@ -25,8 +37,7 @@ def register_user(conn, name, phone, password, role):
     name = (name or "").strip()
     phone = (phone or "").strip()
 
-    if not name:
-        raise ValidationError("Name is required")
+    validate_name(name)
     if not PHONE_PATTERN.match(phone):
         raise ValidationError("Enter a valid 10-digit mobile number")
     validate_password(password or "")

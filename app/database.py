@@ -4,6 +4,7 @@ database.py - SQLite connection helper and schema for VendorSetu.
 All modules receive a sqlite3 connection object, so the business logic can be
 tested against an in-memory database without starting the web server.
 """
+import math
 import os
 import sqlite3
 
@@ -94,3 +95,18 @@ def init_db(conn):
 
 class ValidationError(Exception):
     """Raised by any module when user input breaks a business rule."""
+
+
+def parse_number(value, message):
+    """
+    Convert a form value to a float, or raise ValidationError(message).
+    float() also accepts 'nan' and 'inf'; those are rejected here because they are not amounts
+    (defect DEF-01 / DEF-03: 'nan' crashed the app and 'inf' / 'nan' were accepted as EMI payments).
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise ValidationError(message)
+    if not math.isfinite(number):
+        raise ValidationError(message)
+    return number

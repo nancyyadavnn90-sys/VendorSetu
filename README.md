@@ -35,14 +35,17 @@ Demo logins (mobile / password):
 ## Run the tests
 
 ```bash
-python -m pytest tests -v          # 34 documented cases + 2 integration tests
-python tests/run_test_cases.py     # prints each case and writes tests/test_results.json
+python tests/run_test_cases.py                # 92 documented cases + 1,894 combinations, writes tests/test_results.json
+python tests/run_test_cases.py --module LOAN  # one module (AUTH, SALE, TS, LOAN, EMI); add --details for input/expected/actual
+python tests/run_test_cases.py --before-fix   # same cases on the first version (commit 0ce1911): shows the 9 FAILs
+python -m pytest tests -v                     # 101 tests: 92 cases + 7 combination suites + 2 integration tests
 ```
 
 ## Rebuild the diagrams and the SRS
 
 ```bash
 python diagrams/generate_diagrams.py
+python tests/run_test_cases.py --before-fix
 python tests/run_test_cases.py
 python docs/build_srs.py
 python docs/build_test_cases.py
