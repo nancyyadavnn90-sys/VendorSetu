@@ -488,12 +488,14 @@ def dfd_level1():
     flow(ax, p6, vendor2, "licence status", offset=o, loff=0.6, size=s, lpos=0.3)
     flow(ax, muni, p6, "decision,\ncase details", offset=o, loff=0.9, size=s)
     flow(ax, p6, muni, "applications,\ncase updates", offset=o, loff=0.9, size=s)
-    flow(ax, p6, d7, "licence / case", size=s, loff=0.9)
+    flow(ax, p6, d7, "licence / case", offset=o, size=s, loff=1.0)
+    flow(ax, d7, p6, "licence\nstatus", offset=o, size=s, loff=0.7)
 
     flow(ax, cust, p7, "search, payment,\nrating", offset=o, loff=0.9, size=s)
     flow(ax, p7, cust, "vendor list,\nreceipt", offset=o, loff=0.9, size=s)
     flow(ax, d2b, p7, "vendor profiles", size=s, loff=-0.4)
-    flow(ax, p7, d8, "rating", size=s, loff=0.5)
+    flow(ax, p7, d8, "rating", offset=o, size=s, loff=0.55)
+    flow(ax, d8, p7, "vendor\nratings", offset=o, size=s, loff=0.75)
 
     text(ax, 0.6, -0.6, "* duplicated entity / data store (drawn twice to avoid crossing lines).  "
          "Bank, Municipal and Customer users also authenticate through 1.0 (flows omitted for clarity).",

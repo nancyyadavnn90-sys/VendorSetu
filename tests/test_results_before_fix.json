@@ -4,2075 +4,2378 @@
   "modules": {
     "AUTH": {
       "name": "User Registration & Login",
-      "subsystem": "Authentication (Module 1 - modules/auth.py)",
-      "description": "Verify account creation rules (valid / invalid classes, boundaries, several errors at once), login, lock-out after 5 wrong passwords and protection of pages that need a login.",
-      "pre": [
-        "Application is running with an empty database.",
-        "User is on the Register or Log in page of VendorSetu."
-      ],
-      "post": [
-        "A valid registration stores exactly one user with a hashed password; rejected input stores nothing.",
-        "After 5 consecutive wrong passwords the account stays locked even for the correct password."
-      ]
+      "subsystem": "Authentication (Module 1 - modules/auth.py)"
     },
     "SALE": {
-      "name": "Vendor Profile & Daily Sales Logging",
-      "subsystem": "Vendor Profile & Sales (Module 2 - modules/vendor.py)",
-      "description": "Verify the business profile rules and that a vendor can log one valid sales entry per day, while invalid amounts, dates and payment modes are rejected without saving anything.",
-      "pre": [
-        "Vendor 'Ramesh Kumar' (9876543210 / ramesh123) is registered and logged in.",
-        "His business profile is saved (unless the case says otherwise)."
-      ],
-      "post": [
-        "A valid entry is saved and counted in the 30-day summary; a rejected entry changes nothing.",
-        "A rejected profile is not saved."
-      ]
+      "name": "Vendor Profile & Daily Sales",
+      "subsystem": "Vendor Profile & Sales (Module 2 - modules/vendor.py)"
     },
     "TS": {
       "name": "Trust Score Calculation",
-      "subsystem": "Alt-Credit Scoring Engine (Module 3 - modules/credit_score.py)",
-      "description": "Verify the 0-100 Trust Score formula, the risk band and the loan-eligibility cut-off of 40.",
-      "pre": [
-        "Formula: Sales (active days / 30 x 40) + Repayment (on-time / due x 40, or 20 if no EMI is due yet) + Peer vouching (min(vouches, 3) / 3 x 10) + Tenure (min(years, 5) / 5 x 10), rounded.",
-        "Bands: 70-100 LOW RISK, 40-69 MEDIUM RISK, 0-39 HIGH RISK."
-      ],
-      "post": [
-        "Score, band and eligibility are returned / displayed; no stored data is modified."
-      ]
+      "subsystem": "Alt-Credit Scoring Engine (Module 3 - modules/credit_score.py)"
     },
     "LOAN": {
       "name": "Loan Application & Bank Review",
-      "subsystem": "Loan Management (Module 4 - modules/loan.py)",
-      "description": "Verify progressive-tier loan application rules and the bank officer's approve / reject / disburse actions.",
-      "pre": [
-        "Vendor 'Ramesh Kumar' (9876543210 / ramesh123): profile with 5 years of vending and a sale logged on each of the last 30 days, so his Trust Score is 40 + 20 + 0 + 10 = 70.",
-        "Bank officer 'Anil Sharma' (9123456780 / bank123) is registered."
-      ],
-      "post": [
-        "An accepted application is stored as PENDING; approval and disbursal change its status and create the EMI schedule; rejected requests change nothing.",
-        "Only the owning vendor and bank officers can open a loan's page."
-      ]
+      "subsystem": "Loan Management (Module 4 - modules/loan.py)"
     },
     "EMI": {
       "name": "EMI Schedule & Repayment",
-      "subsystem": "Loan Management - Repayment (Module 4 - modules/loan.py)",
-      "description": "Verify the EMI schedule, the repayment rules, loan closure (next tier unlocked) and the default check.",
-      "pre": [
-        "Ramesh's Tier-1 loan #1 of Rs 15,000 at 12% p.a. for 12 months has been approved and disbursed today by the bank officer (unless the case says otherwise).",
-        "Hand calculation: r = 12% / 12 = 0.01, EMI = 15000 x 0.01 x 1.01^12 / (1.01^12 - 1) = Rs 1,332.73."
-      ],
-      "post": [
-        "Paid installments are marked PAID (on time / late); when all 12 are paid the loan is CLOSED and Tier 2 (Rs 25,000) is unlocked."
-      ]
+      "subsystem": "Loan Management - Repayment (Module 4 - modules/loan.py)"
     }
   },
   "defects": [
     {
       "id": "DEF-01",
       "severity": "High",
-      "cases": [
-        "TC-SALE-10",
-        "TC-LOAN-10"
-      ],
-      "found": "Typing 'nan' as a sale or loan amount crashed the app (HTTP 500 Internal Server Error); 'inf' as a loan amount gave a misleading message.",
+      "found": "Typing 'nan' as a sale or loan amount crashed the app (HTTP 500 Internal Server Error); 'inf' gave a misleading message.",
       "cause": "Python's float() accepts 'nan' and 'inf'. NaN passed every comparison and SQLite stored it as NULL in a NOT NULL column.",
-      "fix": "New helper parse_number() in database.py rejects values that are not finite numbers."
+      "fix": "New helper parse_number() in database.py rejects values that are not finite numbers.",
+      "cases": [
+        "TC-SALE-03 step 5",
+        "TC-SALE-03 step 6",
+        "TC-LOAN-02 step 5",
+        "TC-LOAN-02 step 6"
+      ]
     },
     {
       "id": "DEF-02",
       "severity": "Medium",
-      "cases": [
-        "TC-SALE-15"
-      ],
-      "found": "A sale dated 1900-01-01 (or any old date) was accepted.",
+      "found": "A sale dated 91 days ago (or 01-01-1900) was accepted.",
       "cause": "Only future dates were checked.",
-      "fix": "vendor.log_daily_sale() rejects entries more than 90 days old (MAX_BACKDATE_DAYS); FR-VEN-5 updated."
+      "fix": "vendor.log_daily_sale() rejects entries more than 90 days old (MAX_BACKDATE_DAYS); FR-VEN-5 updated.",
+      "cases": [
+        "TC-SALE-05 step 3"
+      ]
     },
     {
       "id": "DEF-03",
       "severity": "High",
-      "cases": [
-        "TC-EMI-08"
-      ],
-      "found": "Paying an EMI with amount 'nan' or 'inf' marked the installment PAID.",
+      "found": "Paying an EMI with amount 'nan' marked the installment PAID.",
       "cause": "Same as DEF-01: the 'less than EMI' check is False for NaN.",
-      "fix": "loan.pay_emi() uses parse_number()."
+      "fix": "loan.pay_emi() uses parse_number().",
+      "cases": [
+        "TC-EMI-03 step 5",
+        "TC-EMI-03 step 6"
+      ]
     },
     {
       "id": "DEF-04",
       "severity": "Low",
-      "cases": [
-        "TC-AUTH-09",
-        "TC-AUTH-10"
-      ],
-      "found": "Names such as '12345' or a 300-character string were accepted at registration.",
+      "found": "Names such as '12345' or a 51-character string were accepted at registration.",
       "cause": "The name was only checked for being non-empty.",
-      "fix": "auth.validate_name(): letters, spaces, dots and apostrophes only, at most 50 characters; FR-AUTH-1 updated."
+      "fix": "auth.validate_name(): letters, spaces, dots and apostrophes only, at most 50 characters; FR-AUTH-1 updated.",
+      "cases": [
+        "TC-AUTH-02 step 2",
+        "TC-AUTH-02 step 3"
+      ]
     },
     {
       "id": "DEF-05",
       "severity": "High",
-      "cases": [
-        "TC-LOAN-20"
-      ],
       "found": "A customer or municipal officer could open any vendor's loan page and see the amount and EMIs.",
       "cause": "The /loan/<id> page only required a logged-in user and checked ownership for vendors only.",
-      "fix": "Only the owning vendor and bank officers may open a loan page (LOAN_VIEW_ROLES in app.py)."
+      "fix": "Only the owning vendor and bank officers may open a loan page (LOAN_VIEW_ROLES in app.py).",
+      "cases": [
+        "TC-LOAN-06 step 2",
+        "TC-LOAN-06 step 3"
+      ]
     },
     {
       "id": "DEF-06",
       "severity": "Low",
+      "found": "Paying an EMI of a loan that does not exist, or of another vendor's loan, showed two error messages ('Loan not found | Loan not found').",
+      "cause": "The error page redirected to the loan page, which reported a second error.",
+      "fix": "The pay_emi route redirects to the dashboard when the loan is missing or not the vendor's own.",
       "cases": [
-        "TC-EMI-15",
-        "TC-EMI-16"
-      ],
-      "found": "Paying an EMI of a loan that does not exist, or of another vendor's loan, showed two error messages ('Loan not found | Loan not found', 'You can only pay your own loans | You can only view your own loans.').",
-      "cause": "The error page redirected to the loan page, which reported the same error again.",
-      "fix": "The pay_emi route redirects to the dashboard when the loan is missing or not the vendor's own."
+        "TC-EMI-05 step 3",
+        "TC-EMI-05 step 4"
+      ]
     }
   ],
   "results": [
     {
       "id": "TC-AUTH-01",
       "module": "AUTH",
+      "name": "Register a new account",
       "level": "System",
-      "technique": "Positive",
-      "defect": "",
-      "scenario": "Register with valid details",
-      "pre": "No account exists for 9876543210",
-      "steps": [
-        "Open the Register page",
-        "Enter name, mobile, role, password and confirm password",
-        "Click 'Create account'"
+      "description": "Test that a new user can register, that the password is stored as a hash and that a mobile number can be registered only once.",
+      "pre": [
+        "The application is running with an empty database",
+        "The user is on the Register page"
       ],
-      "input": "Name = Ramesh Kumar, Mobile = 9876543210, Role = Street Vendor, Password = ramesh123, Confirm = ramesh123",
-      "expected": "Registration successful. Please log in. -> Log in page is shown",
-      "actual": "Registration successful. Please log in. -> Log in page is shown",
-      "remark": "PASS",
+      "post": [
+        "Ramesh's password is stored only as a salted hash",
+        "Only the two valid registrations are stored; the duplicate mobile number is rejected"
+      ],
       "reqs": [
-        "FR-AUTH-1"
-      ]
+        "FR-AUTH-1",
+        "FR-AUTH-2",
+        "FR-AUTH-4",
+        "NFR-SEC-1"
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "Fill the Register form and click 'Create account'",
+          "data": "Name = Ramesh Kumar, Mobile = 9876543210, Role = Street Vendor, Password = ramesh123, Confirm = ramesh123",
+          "expected": "Registration successful. Please log in. -> Log in page is shown",
+          "actual": "Registration successful. Please log in. -> Log in page is shown",
+          "result": "PASS",
+          "note": "Positive (happy path)",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "1 user stored; password saved as a hash, not as 'ramesh123'",
+          "actual": "1 user stored; password saved as a hash, not as 'ramesh123'",
+          "result": "PASS",
+          "note": "",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Register again with the same mobile number",
+          "data": "Name = Suresh Kumar, Mobile = 9876543210, Password = suresh123",
+          "expected": "Mobile number already registered",
+          "actual": "Mobile number already registered",
+          "result": "PASS",
+          "note": "Negative - duplicate mobile",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "Register a bank officer with a new mobile number",
+          "data": "Name = Anil Sharma, Mobile = 9123456780, Role = Bank / NBFC Officer, Password = bank123",
+          "expected": "Registration successful. Please log in. -> Log in page is shown",
+          "actual": "Registration successful. Please log in. -> Log in page is shown",
+          "result": "PASS",
+          "note": "Positive - another role",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Check post-condition 2",
+          "data": "-",
+          "expected": "2 users stored: Ramesh Kumar (VENDOR), Anil Sharma (BANK_OFFICER)",
+          "actual": "2 users stored: Ramesh Kumar (VENDOR), Anil Sharma (BANK_OFFICER)",
+          "result": "PASS",
+          "note": "",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
       "id": "TC-AUTH-02",
       "module": "AUTH",
+      "name": "Registration - name validation",
       "level": "System",
-      "technique": "Negative",
-      "defect": "",
-      "scenario": "Register with an already registered mobile number",
-      "pre": "An account already exists for 9876543210",
-      "steps": [
-        "Open the Register page",
-        "Enter the same mobile number with other details",
-        "Click 'Create account'"
+      "description": "Test the name rules: required, only letters, spaces and dots, at most 50 characters.",
+      "pre": [
+        "The application is running with an empty database",
+        "The user is on the Register page; Role = Street Vendor and Password = ramesh123 in every step, and a new mobile number in every step"
       ],
-      "input": "Name = Ramesh Kumar, Mobile = 9876543210 (already registered), Password = ramesh123",
-      "expected": "Mobile number already registered",
-      "actual": "Mobile number already registered",
-      "remark": "PASS",
+      "post": [
+        "Only the two valid names are stored; every rejected name stores nothing"
+      ],
       "reqs": [
-        "FR-AUTH-2"
-      ]
+        "FR-AUTH-1"
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "Fill the Register form and click 'Create account'",
+          "data": "Name = (empty), Mobile = 9876543210",
+          "expected": "Name is required",
+          "actual": "Name is required",
+          "result": "PASS",
+          "note": "Negative (EP) - empty",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Fill the Register form and click 'Create account'",
+          "data": "Name = 12345, Mobile = 9876543211",
+          "expected": "Name can contain only letters, spaces and dots",
+          "actual": "Registration successful. Please log in.",
+          "result": "FAIL",
+          "note": "Negative (EP) - digits",
+          "defect": "DEF-04"
+        },
+        {
+          "no": 3,
+          "action": "Fill the Register form and click 'Create account'",
+          "data": "Name = 'A' x 51 characters, Mobile = 9876543212",
+          "expected": "Name must be at most 50 characters",
+          "actual": "Registration successful. Please log in.",
+          "result": "FAIL",
+          "note": "BVA - just above the limit",
+          "defect": "DEF-04"
+        },
+        {
+          "no": 4,
+          "action": "Fill the Register form and click 'Create account'",
+          "data": "Name = 'A' x 50 characters, Mobile = 9876543213",
+          "expected": "Registration successful. Please log in.",
+          "actual": "Registration successful. Please log in.",
+          "result": "PASS",
+          "note": "BVA - on the limit",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Fill the Register form and click 'Create account'",
+          "data": "Name = Mohd. Salim, Mobile = 9876543214",
+          "expected": "Registration successful. Please log in.",
+          "actual": "Registration successful. Please log in.",
+          "result": "PASS",
+          "note": "Positive - name with a dot",
+          "defect": ""
+        },
+        {
+          "no": 6,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "2 users stored: 'A' x 50 (VENDOR), Mohd. Salim (VENDOR)",
+          "actual": "4 users stored: 12345 (VENDOR), 'A' x 51 (VENDOR), 'A' x 50 (VENDOR), Mohd. Salim (VENDOR)",
+          "result": "FAIL",
+          "note": "",
+          "defect": ""
+        }
+      ],
+      "result": "FAIL"
     },
     {
       "id": "TC-AUTH-03",
       "module": "AUTH",
+      "name": "Registration - mobile number and role validation",
       "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "",
-      "scenario": "Register with an invalid mobile number",
-      "pre": "-",
-      "steps": [
-        "Open the Register page",
-        "Enter a 5-digit mobile number",
-        "Click 'Create account'"
+      "description": "Test that only a 10-digit Indian mobile number starting with 6-9 and one of the four roles are accepted.",
+      "pre": [
+        "The application is running with an empty database",
+        "The user is on the Register page; Name = Ramesh Kumar and Password = ramesh123 in every step"
       ],
-      "input": "Mobile = 98765 (5 digits), other fields valid",
-      "expected": "Enter a valid 10-digit mobile number",
-      "actual": "Enter a valid 10-digit mobile number",
-      "remark": "PASS",
+      "post": [
+        "No account is created by any of these inputs"
+      ],
       "reqs": [
+        "FR-AUTH-1",
         "FR-AUTH-2"
-      ]
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "Fill the Register form and click 'Create account'",
+          "data": "Mobile = 987654321 (9 digits)",
+          "expected": "Enter a valid 10-digit mobile number",
+          "actual": "Enter a valid 10-digit mobile number",
+          "result": "PASS",
+          "note": "BVA - 9 digits",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Fill the Register form and click 'Create account'",
+          "data": "Mobile = 98765432101 (11 digits)",
+          "expected": "Enter a valid 10-digit mobile number",
+          "actual": "Enter a valid 10-digit mobile number",
+          "result": "PASS",
+          "note": "BVA - 11 digits",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Fill the Register form and click 'Create account'",
+          "data": "Mobile = 5876543210 (starts with 5)",
+          "expected": "Enter a valid 10-digit mobile number",
+          "actual": "Enter a valid 10-digit mobile number",
+          "result": "PASS",
+          "note": "Negative (EP) - must start with 6-9",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "Fill the Register form and click 'Create account'",
+          "data": "Mobile = 98765abcde",
+          "expected": "Enter a valid 10-digit mobile number",
+          "actual": "Enter a valid 10-digit mobile number",
+          "result": "PASS",
+          "note": "Negative (EP) - letters",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Fill the Register form and click 'Create account'",
+          "data": "Mobile = 9876543210, Role = (not selected)",
+          "expected": "Invalid role selected",
+          "actual": "Invalid role selected",
+          "result": "PASS",
+          "note": "Negative - no role",
+          "defect": ""
+        },
+        {
+          "no": 6,
+          "action": "Send the form with a role that is not offered",
+          "data": "Mobile = 9876543210, Role = ADMIN",
+          "expected": "Invalid role selected",
+          "actual": "Invalid role selected",
+          "result": "PASS",
+          "note": "Security - forged request",
+          "defect": ""
+        },
+        {
+          "no": 7,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "0 users stored",
+          "actual": "0 users stored",
+          "result": "PASS",
+          "note": "",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
       "id": "TC-AUTH-04",
       "module": "AUTH",
+      "name": "Registration - password validation",
       "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "",
-      "scenario": "Register with a weak password",
-      "pre": "-",
-      "steps": [
-        "Open the Register page",
-        "Enter a 3-letter password in both password fields",
-        "Click 'Create account'"
+      "description": "Test the password rules (at least 6 characters with a letter and a digit, confirmation must match) and the message shown when every field is wrong.",
+      "pre": [
+        "The application is running with an empty database",
+        "The user is on the Register page; Name = Ramesh Kumar, Mobile = 9876543210, Role = Street Vendor unless the step says otherwise"
       ],
-      "input": "Password = abc, Confirm = abc, other fields valid",
-      "expected": "Password must be at least 6 characters with letters and digits",
-      "actual": "Password must be at least 6 characters with letters and digits",
-      "remark": "PASS",
+      "post": [
+        "Only the registration with a valid password (step 6) is stored"
+      ],
       "reqs": [
+        "FR-AUTH-1",
         "FR-AUTH-3"
-      ]
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "Fill the Register form and click 'Create account'",
+          "data": "Password = Confirm = ab123 (5 characters)",
+          "expected": "Password must be at least 6 characters with letters and digits",
+          "actual": "Password must be at least 6 characters with letters and digits",
+          "result": "PASS",
+          "note": "BVA - 5 characters",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Fill the Register form and click 'Create account'",
+          "data": "Password = Confirm = abcdefgh",
+          "expected": "Password must be at least 6 characters with letters and digits",
+          "actual": "Password must be at least 6 characters with letters and digits",
+          "result": "PASS",
+          "note": "Negative (EP) - no digit",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Fill the Register form and click 'Create account'",
+          "data": "Password = Confirm = 12345678",
+          "expected": "Password must be at least 6 characters with letters and digits",
+          "actual": "Password must be at least 6 characters with letters and digits",
+          "result": "PASS",
+          "note": "Negative (EP) - no letter",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "Fill the Register form and click 'Create account'",
+          "data": "Password = ramesh123, Confirm = ramesh124",
+          "expected": "Passwords do not match",
+          "actual": "Passwords do not match",
+          "result": "PASS",
+          "note": "Negative - confirmation differs",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Leave every field empty and click 'Create account'",
+          "data": "All fields empty",
+          "expected": "Name is required",
+          "actual": "Name is required",
+          "result": "PASS",
+          "note": "Combination - first broken rule is reported",
+          "defect": ""
+        },
+        {
+          "no": 6,
+          "action": "Fill the Register form and click 'Create account'",
+          "data": "Password = Confirm = ab1234 (6 characters)",
+          "expected": "Registration successful. Please log in.",
+          "actual": "Registration successful. Please log in.",
+          "result": "PASS",
+          "note": "BVA - 6 characters",
+          "defect": ""
+        },
+        {
+          "no": 7,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "1 user stored: Ramesh Kumar (VENDOR)",
+          "actual": "1 user stored: Ramesh Kumar (VENDOR)",
+          "result": "PASS",
+          "note": "",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
       "id": "TC-AUTH-05",
       "module": "AUTH",
+      "name": "Login and logout",
       "level": "System",
-      "technique": "Negative",
-      "defect": "",
-      "scenario": "Register with non-matching passwords",
-      "pre": "-",
-      "steps": [
-        "Open the Register page",
-        "Enter different values in Password and Confirm password",
-        "Click 'Create account'"
+      "description": "Test login with correct and wrong credentials, logout, and that pages need a logged-in user.",
+      "pre": [
+        "Vendor Ramesh Kumar (9876543210 / ramesh123) is registered",
+        "The user is on the Log in page"
       ],
-      "input": "Password = ramesh123, Confirm = ramesh124",
-      "expected": "Passwords do not match",
-      "actual": "Passwords do not match",
-      "remark": "PASS",
+      "post": [
+        "A session exists only after step 1; after a failed login the user stays on the Log in page"
+      ],
       "reqs": [
-        "FR-AUTH-1"
-      ]
+        "FR-AUTH-5",
+        "FR-AUTH-7",
+        "NFR-SEC-4"
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "Enter mobile number and password; click 'Log in'",
+          "data": "9876543210 / ramesh123",
+          "expected": "Welcome, Ramesh Kumar! -> Vendor dashboard is shown",
+          "actual": "Welcome, Ramesh Kumar! -> Vendor dashboard is shown",
+          "result": "PASS",
+          "note": "Positive (happy path)",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Click 'Logout'",
+          "data": "-",
+          "expected": "Logged out. -> Log in page is shown",
+          "actual": "Logged out. -> Log in page is shown",
+          "result": "PASS",
+          "note": "Positive",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Log in with a wrong password",
+          "data": "9876543210 / ramesh124",
+          "expected": "Invalid mobile number or password -> Log in page is shown",
+          "actual": "Invalid mobile number or password -> Log in page is shown",
+          "result": "PASS",
+          "note": "Negative - wrong password",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "Log in with a mobile number that is not registered",
+          "data": "9000000001 / ramesh123",
+          "expected": "Invalid mobile number or password -> Log in page is shown",
+          "actual": "Invalid mobile number or password -> Log in page is shown",
+          "result": "PASS",
+          "note": "Negative - unknown user (same message, so no hint is given)",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Type an SQL-injection string in both fields",
+          "data": "' OR '1'='1 / ' OR '1'='1",
+          "expected": "Invalid mobile number or password -> Log in page is shown",
+          "actual": "Invalid mobile number or password -> Log in page is shown",
+          "result": "PASS",
+          "note": "Security - SQL injection",
+          "defect": ""
+        },
+        {
+          "no": 6,
+          "action": "Type the dashboard address in the browser without logging in",
+          "data": "URL = /dashboard",
+          "expected": "Please log in first. -> Log in page is shown",
+          "actual": "Please log in first. -> Log in page is shown",
+          "result": "PASS",
+          "note": "Security - page needs login",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
       "id": "TC-AUTH-06",
       "module": "AUTH",
+      "name": "Account lock after 5 failed attempts",
       "level": "System",
-      "technique": "Positive",
-      "defect": "",
-      "scenario": "Log in with correct credentials",
-      "pre": "Ramesh is registered as a vendor",
-      "steps": [
-        "Open the Log in page",
-        "Enter mobile number and password",
-        "Click 'Log in'"
+      "description": "Test that 5 consecutive wrong passwords lock the account and that a successful login resets the counter.",
+      "pre": [
+        "Vendor Ramesh Kumar (9876543210 / ramesh123) is registered and not locked",
+        "The user is on the Log in page"
       ],
-      "input": "Mobile = 9876543210, Password = ramesh123",
-      "expected": "Welcome, Ramesh Kumar! -> Vendor dashboard is shown",
-      "actual": "Welcome, Ramesh Kumar! -> Vendor dashboard is shown",
-      "remark": "PASS",
-      "reqs": [
-        "FR-AUTH-5"
-      ]
-    },
-    {
-      "id": "TC-AUTH-07",
-      "module": "AUTH",
-      "level": "System",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Account lock after 5 wrong passwords",
-      "pre": "Ramesh is registered as a vendor",
-      "steps": [
-        "Log in with a wrong password 5 times",
-        "Then log in with the correct password"
+      "post": [
+        "Ramesh's account is locked (is_locked = 1) after 5 consecutive failed attempts"
       ],
-      "input": "Mobile = 9876543210; Password = wrong1 (x5), then ramesh123",
-      "expected": "Attempts 1-4: Invalid mobile number or password | Attempt 5: Account locked after 5 failed attempts. Contact support | Attempt 6 (correct password): Account locked after 5 failed attempts. Contact support",
-      "actual": "Attempts 1-4: Invalid mobile number or password | Attempt 5: Account locked after 5 failed attempts. Contact support | Attempt 6 (correct password): Account locked after 5 failed attempts. Contact support",
-      "remark": "PASS",
       "reqs": [
         "FR-AUTH-6",
         "NFR-SEC-2"
-      ]
-    },
-    {
-      "id": "TC-AUTH-08",
-      "module": "AUTH",
-      "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "",
-      "scenario": "Register with the name left empty",
-      "pre": "-",
-      "steps": [
-        "Open the Register page",
-        "Fill the form with the input values",
-        "Click 'Create account'"
       ],
-      "input": "Name = (empty), other fields valid",
-      "expected": "Name is required",
-      "actual": "Name is required",
-      "remark": "PASS",
-      "reqs": [
-        "FR-AUTH-1"
-      ]
-    },
-    {
-      "id": "TC-AUTH-09",
-      "module": "AUTH",
-      "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "DEF-04",
-      "scenario": "Register with digits as the name",
-      "pre": "-",
       "steps": [
-        "Open the Register page",
-        "Fill the form with the input values",
-        "Click 'Create account'"
+        {
+          "no": 1,
+          "action": "Log in with a wrong password 4 times",
+          "data": "9876543210 / wrong1 (x4)",
+          "expected": "Invalid mobile number or password (each time)",
+          "actual": "Invalid mobile number or password (each time)",
+          "result": "PASS",
+          "note": "Negative",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Log in with the correct password",
+          "data": "9876543210 / ramesh123",
+          "expected": "Welcome, Ramesh Kumar! -> Vendor dashboard is shown",
+          "actual": "Welcome, Ramesh Kumar! -> Vendor dashboard is shown",
+          "result": "PASS",
+          "note": "Successful login resets the counter",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Log in with a wrong password 4 more times",
+          "data": "9876543210 / wrong1 (x4)",
+          "expected": "Invalid mobile number or password (each time)",
+          "actual": "Invalid mobile number or password (each time)",
+          "result": "PASS",
+          "note": "Not locked: the counter was reset",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "Log in with a wrong password a 5th time",
+          "data": "9876543210 / wrong1",
+          "expected": "Account locked after 5 failed attempts. Contact support",
+          "actual": "Account locked after 5 failed attempts. Contact support",
+          "result": "PASS",
+          "note": "BVA - 5th attempt locks",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Log in with the correct password",
+          "data": "9876543210 / ramesh123",
+          "expected": "Account locked after 5 failed attempts. Contact support",
+          "actual": "Account locked after 5 failed attempts. Contact support",
+          "result": "PASS",
+          "note": "Locked even with the correct password",
+          "defect": ""
+        },
+        {
+          "no": 6,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "is_locked = 1, failed_attempts = 5",
+          "actual": "is_locked = 1, failed_attempts = 5",
+          "result": "PASS",
+          "note": "",
+          "defect": ""
+        }
       ],
-      "input": "Name = 12345, other fields valid",
-      "expected": "Name can contain only letters, spaces and dots",
-      "actual": "Registration successful. Please log in.",
-      "remark": "FAIL",
-      "reqs": [
-        "FR-AUTH-1"
-      ]
-    },
-    {
-      "id": "TC-AUTH-10",
-      "module": "AUTH",
-      "level": "System",
-      "technique": "BVA",
-      "defect": "DEF-04",
-      "scenario": "Boundary value - name length 50 / 51",
-      "pre": "No account exists for 9876543210",
-      "steps": [
-        "Open the Register page",
-        "Fill the form with the input values",
-        "Click 'Create account'"
-      ],
-      "input": "Name = 'A' x 50 characters; then Name = 'A' x 51 characters (fresh database each time)",
-      "expected": "50 characters: Registration successful. Please log in. | 51 characters: Name must be at most 50 characters",
-      "actual": "50 characters: Registration successful. Please log in. | 51 characters: Registration successful. Please log in.",
-      "remark": "FAIL",
-      "reqs": [
-        "FR-AUTH-1"
-      ]
-    },
-    {
-      "id": "TC-AUTH-11",
-      "module": "AUTH",
-      "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "",
-      "scenario": "Mobile number - invalid equivalence classes",
-      "pre": "-",
-      "steps": [
-        "Open the Register page",
-        "Fill the form with the input values",
-        "Click 'Create account'"
-      ],
-      "input": "Mobile = 987654321 (9 digits) / 98765432101 (11 digits) / 5876543210 (starts with 5) / 98765abcde",
-      "expected": "9 digits: Enter a valid 10-digit mobile number | 11 digits: Enter a valid 10-digit mobile number | Starts with 5: Enter a valid 10-digit mobile number | Letters: Enter a valid 10-digit mobile number",
-      "actual": "9 digits: Enter a valid 10-digit mobile number | 11 digits: Enter a valid 10-digit mobile number | Starts with 5: Enter a valid 10-digit mobile number | Letters: Enter a valid 10-digit mobile number",
-      "remark": "PASS",
-      "reqs": [
-        "FR-AUTH-2"
-      ]
-    },
-    {
-      "id": "TC-AUTH-12",
-      "module": "AUTH",
-      "level": "System",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Boundary value - password length 5 / 6",
-      "pre": "No account exists for 9876543210",
-      "steps": [
-        "Open the Register page",
-        "Fill the form with the input values",
-        "Click 'Create account'"
-      ],
-      "input": "Password = ab123 (5 characters); then Password = ab1234 (6 characters)",
-      "expected": "5 characters: Password must be at least 6 characters with letters and digits | 6 characters: Registration successful. Please log in.",
-      "actual": "5 characters: Password must be at least 6 characters with letters and digits | 6 characters: Registration successful. Please log in.",
-      "remark": "PASS",
-      "reqs": [
-        "FR-AUTH-3"
-      ]
-    },
-    {
-      "id": "TC-AUTH-13",
-      "module": "AUTH",
-      "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "",
-      "scenario": "Password with only letters / only digits",
-      "pre": "-",
-      "steps": [
-        "Open the Register page",
-        "Fill the form with the input values",
-        "Click 'Create account'"
-      ],
-      "input": "Password = abcdefgh (no digit); then Password = 12345678 (no letter)",
-      "expected": "Only letters: Password must be at least 6 characters with letters and digits | Only digits: Password must be at least 6 characters with letters and digits",
-      "actual": "Only letters: Password must be at least 6 characters with letters and digits | Only digits: Password must be at least 6 characters with letters and digits",
-      "remark": "PASS",
-      "reqs": [
-        "FR-AUTH-3"
-      ]
-    },
-    {
-      "id": "TC-AUTH-14",
-      "module": "AUTH",
-      "level": "System",
-      "technique": "Security",
-      "defect": "",
-      "scenario": "No role / forged role",
-      "pre": "-",
-      "steps": [
-        "Open the Register page",
-        "Do not select a role (or send role=ADMIN in the request)",
-        "Click 'Create account'"
-      ],
-      "input": "Role = (not selected); then Role = ADMIN (not in the list)",
-      "expected": "Not selected: Invalid role selected | ADMIN: Invalid role selected",
-      "actual": "Not selected: Invalid role selected | ADMIN: Invalid role selected",
-      "remark": "PASS",
-      "reqs": [
-        "FR-AUTH-1"
-      ]
-    },
-    {
-      "id": "TC-AUTH-15",
-      "module": "AUTH",
-      "level": "System",
-      "technique": "Combination",
-      "defect": "",
-      "scenario": "Several invalid fields at once (combination)",
-      "pre": "-",
-      "steps": [
-        "Open the Register page",
-        "Fill the form with the input values",
-        "Click 'Create account'"
-      ],
-      "input": "(a) all fields empty; (b) Mobile = 98765 and Password = abc together",
-      "expected": "All empty: Name is required | Mobile + password invalid: Enter a valid 10-digit mobile number",
-      "actual": "All empty: Name is required | Mobile + password invalid: Enter a valid 10-digit mobile number",
-      "remark": "PASS",
-      "reqs": [
-        "FR-AUTH-1",
-        "FR-AUTH-2",
-        "FR-AUTH-3"
-      ]
-    },
-    {
-      "id": "TC-AUTH-16",
-      "module": "AUTH",
-      "level": "System",
-      "technique": "Negative",
-      "defect": "",
-      "scenario": "Log in with a wrong password",
-      "pre": "Ramesh is registered as a vendor",
-      "steps": [
-        "Open the Log in page",
-        "Enter the mobile number and password",
-        "Click 'Log in'"
-      ],
-      "input": "Mobile = 9876543210, Password = ramesh124",
-      "expected": "Invalid mobile number or password",
-      "actual": "Invalid mobile number or password",
-      "remark": "PASS",
-      "reqs": [
-        "FR-AUTH-5"
-      ]
-    },
-    {
-      "id": "TC-AUTH-17",
-      "module": "AUTH",
-      "level": "System",
-      "technique": "Negative",
-      "defect": "",
-      "scenario": "Log in with an unregistered mobile number",
-      "pre": "Ramesh is registered as a vendor",
-      "steps": [
-        "Open the Log in page",
-        "Enter the mobile number and password",
-        "Click 'Log in'"
-      ],
-      "input": "Mobile = 9000000001 (not registered), Password = ramesh123",
-      "expected": "Invalid mobile number or password",
-      "actual": "Invalid mobile number or password",
-      "remark": "PASS",
-      "reqs": [
-        "FR-AUTH-5"
-      ]
-    },
-    {
-      "id": "TC-AUTH-18",
-      "module": "AUTH",
-      "level": "System",
-      "technique": "Security",
-      "defect": "",
-      "scenario": "SQL injection in the login form",
-      "pre": "Ramesh is registered as a vendor",
-      "steps": [
-        "Open the Log in page",
-        "Enter the mobile number and password",
-        "Click 'Log in'"
-      ],
-      "input": "Mobile = ' OR '1'='1, Password = ' OR '1'='1",
-      "expected": "Invalid mobile number or password",
-      "actual": "Invalid mobile number or password",
-      "remark": "PASS",
-      "reqs": [
-        "FR-AUTH-5",
-        "NFR-SEC-4"
-      ]
-    },
-    {
-      "id": "TC-AUTH-19",
-      "module": "AUTH",
-      "level": "System",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Failed-attempt counter resets after a successful login",
-      "pre": "Ramesh is registered as a vendor",
-      "steps": [
-        "Log in with a wrong password 4 times, then the correct one",
-        "Log in with a wrong password 4 more times, then the correct one"
-      ],
-      "input": "Mobile = 9876543210; wrong1 (x4), ramesh123, wrong1 (x4), ramesh123",
-      "expected": "4 wrong + correct: Welcome, Ramesh Kumar! | 4 more wrong: Invalid mobile number or password | Correct again: Welcome, Ramesh Kumar!",
-      "actual": "4 wrong + correct: Welcome, Ramesh Kumar! | 4 more wrong: Invalid mobile number or password | Correct again: Welcome, Ramesh Kumar!",
-      "remark": "PASS",
-      "reqs": [
-        "FR-AUTH-6"
-      ]
-    },
-    {
-      "id": "TC-AUTH-20",
-      "module": "AUTH",
-      "level": "System",
-      "technique": "Security",
-      "defect": "",
-      "scenario": "Open the dashboard without logging in",
-      "pre": "Nobody is logged in",
-      "steps": [
-        "Type the dashboard address in the browser"
-      ],
-      "input": "URL = /dashboard",
-      "expected": "Please log in first. -> Log in page is shown",
-      "actual": "Please log in first. -> Log in page is shown",
-      "remark": "PASS",
-      "reqs": [
-        "FR-AUTH-7"
-      ]
+      "result": "PASS"
     },
     {
       "id": "TC-SALE-01",
       "module": "SALE",
+      "name": "Save the profile and log a daily sale",
       "level": "System",
-      "technique": "Positive",
-      "defect": "",
-      "scenario": "Log a valid daily sale",
-      "pre": "No sale logged today",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Daily sales', enter the date, amount and payment mode",
-        "Click 'Log sale'"
+      "description": "Test that sales can be logged only after the profile is saved, and only once per day.",
+      "pre": [
+        "Vendor Ramesh Kumar (9876543210 / ramesh123) is registered and logged in",
+        "He has NOT saved his business profile yet and has no sales"
       ],
-      "input": "Date = 04-11-2026 (today), Amount = 1500, Mode = UPI",
-      "expected": "Sale logged. Your trust score has been updated.",
-      "actual": "Sale logged. Your trust score has been updated.",
-      "remark": "PASS",
+      "post": [
+        "The profile is saved and exactly one sale is stored for today; the duplicate entry is rejected"
+      ],
       "reqs": [
-        "FR-VEN-3"
-      ]
+        "FR-VEN-1",
+        "FR-VEN-3",
+        "FR-VEN-5",
+        "FR-VEN-6"
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Date = 04-11-2026, Amount = 1500, Mode = UPI",
+          "expected": "Complete your vendor profile first",
+          "actual": "Complete your vendor profile first",
+          "result": "PASS",
+          "note": "Negative - profile missing",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "In 'Business profile' enter the values and click 'Save profile'",
+          "data": "Business = Fruits & vegetables, Zone = Sector 14 Market, Gurugram, Years = 5, UPI = ramesh@upi",
+          "expected": "Profile saved.",
+          "actual": "Profile saved.",
+          "result": "PASS",
+          "note": "Positive",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Date = 04-11-2026, Amount = 1500, Mode = UPI",
+          "expected": "Sale logged. Your trust score has been updated.",
+          "actual": "Sale logged. Your trust score has been updated.",
+          "result": "PASS",
+          "note": "Positive (happy path)",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Date = 04-11-2026 (same day), Amount = 900, Mode = Cash",
+          "expected": "Sales already logged for this date",
+          "actual": "Sales already logged for this date",
+          "result": "PASS",
+          "note": "Negative - one entry per day",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "1 sale stored: 04-11-2026 Rs 1500 UPI",
+          "actual": "1 sale stored: 04-11-2026 Rs 1500 UPI",
+          "result": "PASS",
+          "note": "",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
       "id": "TC-SALE-02",
       "module": "SALE",
+      "name": "Business profile validation",
       "level": "System",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Log a sale with zero amount",
-      "pre": "-",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Daily sales', enter the date, amount and payment mode",
-        "Click 'Log sale'"
+      "description": "Test that business type and vending zone are required and years of vending must be 0-60.",
+      "pre": [
+        "Vendor Ramesh Kumar (9876543210 / ramesh123) is registered and logged in",
+        "He has NOT saved his business profile; in every step the other fields are valid (Business = Fruits & vegetables, Zone = Sector 14 Market, Gurugram, Years = 5)"
       ],
-      "input": "Date = 04-11-2026, Amount = 0, Mode = Cash",
-      "expected": "Sale amount must be greater than 0",
-      "actual": "Sale amount must be greater than 0",
-      "remark": "PASS",
+      "post": [
+        "Only the valid profile (step 6) is stored"
+      ],
       "reqs": [
-        "FR-VEN-4"
-      ]
+        "FR-VEN-1",
+        "FR-VEN-2"
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "Save the profile",
+          "data": "Business type = (empty)",
+          "expected": "Business type and vending zone are required",
+          "actual": "Business type and vending zone are required",
+          "result": "PASS",
+          "note": "Negative - required field",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Save the profile",
+          "data": "Vending zone = (empty)",
+          "expected": "Business type and vending zone are required",
+          "actual": "Business type and vending zone are required",
+          "result": "PASS",
+          "note": "Negative - required field",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Save the profile",
+          "data": "Years = abc",
+          "expected": "Years of vending must be a number",
+          "actual": "Years of vending must be a number",
+          "result": "PASS",
+          "note": "Negative (EP) - not a number",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "Save the profile",
+          "data": "Years = 61",
+          "expected": "Years of vending must be between 0 and 60",
+          "actual": "Years of vending must be between 0 and 60",
+          "result": "PASS",
+          "note": "BVA - just above 60",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Save the profile",
+          "data": "Years = -1",
+          "expected": "Years of vending must be between 0 and 60",
+          "actual": "Years of vending must be between 0 and 60",
+          "result": "PASS",
+          "note": "BVA - just below 0",
+          "defect": ""
+        },
+        {
+          "no": 6,
+          "action": "Save the profile",
+          "data": "Years = 60",
+          "expected": "Profile saved.",
+          "actual": "Profile saved.",
+          "result": "PASS",
+          "note": "BVA - on the limit",
+          "defect": ""
+        },
+        {
+          "no": 7,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "Profile stored: Fruits & vegetables, Sector 14 Market, Gurugram, 60 years",
+          "actual": "Profile stored: Fruits & vegetables, Sector 14 Market, Gurugram, 60 years",
+          "result": "PASS",
+          "note": "",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
       "id": "TC-SALE-03",
       "module": "SALE",
+      "name": "Sale amount - invalid values",
       "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "",
-      "scenario": "Log a sale for a future date",
-      "pre": "-",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Daily sales', enter the date, amount and payment mode",
-        "Click 'Log sale'"
+      "description": "Test that zero, negative, non-numeric and special values (nan, inf) are rejected as the amount.",
+      "pre": [
+        "Vendor Ramesh Kumar (9876543210 / ramesh123) is registered and logged in",
+        "His profile is saved and he has no sales; Date = today and Mode = UPI in every step"
       ],
-      "input": "Date = 06-11-2026 (2 days ahead), Amount = 1200, Mode = Cash",
-      "expected": "Sale date cannot be in the future",
-      "actual": "Sale date cannot be in the future",
-      "remark": "PASS",
+      "post": [
+        "No sale is stored for any invalid amount"
+      ],
       "reqs": [
-        "FR-VEN-5"
-      ]
+        "FR-VEN-4"
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Amount = 0",
+          "expected": "Sale amount must be greater than 0",
+          "actual": "Sale amount must be greater than 0",
+          "result": "PASS",
+          "note": "BVA - zero",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Amount = -500",
+          "expected": "Sale amount must be greater than 0",
+          "actual": "Sale amount must be greater than 0",
+          "result": "PASS",
+          "note": "Negative (EP) - negative",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Amount = abc",
+          "expected": "Sale amount must be a number",
+          "actual": "Sale amount must be a number",
+          "result": "PASS",
+          "note": "Negative (EP) - text",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Amount = (empty)",
+          "expected": "Sale amount must be a number",
+          "actual": "Sale amount must be a number",
+          "result": "PASS",
+          "note": "Negative (EP) - empty",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Amount = nan",
+          "expected": "Sale amount must be a number",
+          "actual": "HTTP 500 Internal Server Error (IntegrityError: NOT NULL constraint failed: sales.amount)",
+          "result": "FAIL",
+          "note": "Negative (EP) - special value",
+          "defect": "DEF-01"
+        },
+        {
+          "no": 6,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Amount = inf",
+          "expected": "Sale amount must be a number",
+          "actual": "Sale amount cannot exceed Rs 1,00,000 per day",
+          "result": "FAIL",
+          "note": "Negative (EP) - special value",
+          "defect": "DEF-01"
+        },
+        {
+          "no": 7,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "0 sales stored",
+          "actual": "0 sales stored",
+          "result": "PASS",
+          "note": "",
+          "defect": ""
+        }
+      ],
+      "result": "FAIL"
     },
     {
       "id": "TC-SALE-04",
       "module": "SALE",
+      "name": "Sale amount - boundary values",
       "level": "System",
-      "technique": "Negative",
-      "defect": "",
-      "scenario": "Log a second sale for the same date",
-      "pre": "A sale for 03-11-2026 is already logged",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Daily sales', enter the date, amount and payment mode",
-        "Click 'Log sale'"
+      "description": "Test the amounts on both sides of the limits: greater than 0 and at most Rs 1,00,000 per day.",
+      "pre": [
+        "Vendor Ramesh Kumar (9876543210 / ramesh123) is registered and logged in",
+        "His profile is saved and he has no sales; Mode = UPI in every step"
       ],
-      "input": "Date = 03-11-2026, Amount = 900, Mode = Cash",
-      "expected": "Sales already logged for this date",
-      "actual": "Sales already logged for this date",
-      "remark": "PASS",
+      "post": [
+        "Only the two amounts inside the limits are stored"
+      ],
       "reqs": [
-        "FR-VEN-5"
-      ]
+        "FR-VEN-4"
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Date = 04-11-2026, Amount = 100000.01",
+          "expected": "Sale amount cannot exceed Rs 1,00,000 per day",
+          "actual": "Sale amount cannot exceed Rs 1,00,000 per day",
+          "result": "PASS",
+          "note": "BVA - just above the upper limit",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Date = 04-11-2026, Amount = 100000",
+          "expected": "Sale logged. Your trust score has been updated.",
+          "actual": "Sale logged. Your trust score has been updated.",
+          "result": "PASS",
+          "note": "BVA - on the upper limit",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Date = 03-11-2026, Amount = 1",
+          "expected": "Sale logged. Your trust score has been updated.",
+          "actual": "Sale logged. Your trust score has been updated.",
+          "result": "PASS",
+          "note": "BVA - smallest whole amount",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Date = 02-11-2026, Amount = -0.01",
+          "expected": "Sale amount must be greater than 0",
+          "actual": "Sale amount must be greater than 0",
+          "result": "PASS",
+          "note": "BVA - just below the lower limit",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "2 sales stored: 04-11-2026 Rs 100000 UPI, 03-11-2026 Rs 1 UPI",
+          "actual": "2 sales stored: 04-11-2026 Rs 100000 UPI, 03-11-2026 Rs 1 UPI",
+          "result": "PASS",
+          "note": "",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
       "id": "TC-SALE-05",
       "module": "SALE",
+      "name": "Sale date and payment mode validation",
       "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "",
-      "scenario": "Log a sale above the daily limit",
-      "pre": "-",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Daily sales', enter the date, amount and payment mode",
-        "Click 'Log sale'"
+      "description": "Test the date rules (not in the future, not more than 90 days old, a real date), the payment mode and an entry with several wrong fields.",
+      "pre": [
+        "Vendor Ramesh Kumar (9876543210 / ramesh123) is registered and logged in",
+        "His profile is saved and he has no sales; Amount = 1500 and Mode = UPI unless the step says otherwise"
       ],
-      "input": "Date = 04-11-2026, Amount = 150000, Mode = UPI",
-      "expected": "Sale amount cannot exceed Rs 1,00,000 per day",
-      "actual": "Sale amount cannot exceed Rs 1,00,000 per day",
-      "remark": "PASS",
+      "post": [
+        "Only the entry dated 90 days ago (step 4) is stored"
+      ],
       "reqs": [
-        "FR-VEN-4"
-      ]
+        "FR-VEN-3",
+        "FR-VEN-4",
+        "FR-VEN-5"
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Date = 05-11-2026 (tomorrow)",
+          "expected": "Sale date cannot be in the future",
+          "actual": "Sale date cannot be in the future",
+          "result": "PASS",
+          "note": "BVA - tomorrow",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Date = 2026-02-30 (no such day)",
+          "expected": "Enter a valid date (YYYY-MM-DD)",
+          "actual": "Enter a valid date (YYYY-MM-DD)",
+          "result": "PASS",
+          "note": "Negative (EP) - invalid date",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Date = 05-08-2026 (91 days ago)",
+          "expected": "Sale date cannot be more than 90 days old",
+          "actual": "Sale logged. Your trust score has been updated.",
+          "result": "FAIL",
+          "note": "BVA - just outside 90 days",
+          "defect": "DEF-02"
+        },
+        {
+          "no": 4,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Date = 06-08-2026 (90 days ago)",
+          "expected": "Sale logged. Your trust score has been updated.",
+          "actual": "Sale logged. Your trust score has been updated.",
+          "result": "PASS",
+          "note": "BVA - on the 90-day limit",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Send the sales form with a payment mode that is not offered",
+          "data": "Date = 04-11-2026, Mode = CARD",
+          "expected": "Payment mode must be CASH or UPI",
+          "actual": "Payment mode must be CASH or UPI",
+          "result": "PASS",
+          "note": "Security - forged value",
+          "defect": ""
+        },
+        {
+          "no": 6,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Amount = 0, Date = 05-11-2026, Mode = CARD (three fields wrong)",
+          "expected": "Sale amount must be greater than 0",
+          "actual": "Sale amount must be greater than 0",
+          "result": "PASS",
+          "note": "Combination - first broken rule is reported",
+          "defect": ""
+        },
+        {
+          "no": 7,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "1 sale stored: 06-08-2026 Rs 1500 UPI",
+          "actual": "2 sales stored: 06-08-2026 Rs 1500 UPI, 05-08-2026 Rs 1500 UPI",
+          "result": "FAIL",
+          "note": "",
+          "defect": ""
+        }
+      ],
+      "result": "FAIL"
     },
     {
       "id": "TC-SALE-06",
       "module": "SALE",
+      "name": "30-day sales summary on the dashboard",
       "level": "System",
-      "technique": "Negative",
-      "defect": "",
-      "scenario": "Log a sale before saving the business profile",
-      "pre": "Ramesh has NOT saved his business profile",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Daily sales', enter the date, amount and payment mode",
-        "Click 'Log sale'"
+      "description": "Test that the dashboard shows the correct 30-day total, active days, daily average and the updated Trust Score.",
+      "pre": [
+        "Vendor Ramesh Kumar (9876543210 / ramesh123) is registered and logged in",
+        "His profile is saved (5 years of vending) and he has no sales"
       ],
-      "input": "Date = 04-11-2026, Amount = 1500, Mode = UPI",
-      "expected": "Complete your vendor profile first",
-      "actual": "Complete your vendor profile first",
-      "remark": "PASS",
-      "reqs": [
-        "FR-VEN-6"
-      ]
-    },
-    {
-      "id": "TC-SALE-07",
-      "module": "SALE",
-      "level": "System",
-      "technique": "Positive",
-      "defect": "",
-      "scenario": "30-day summary on the dashboard",
-      "pre": "No sales logged yet",
-      "steps": [
-        "Log three sales (one per day)",
-        "Open the dashboard and read the summary cards"
+      "post": [
+        "Three sales are stored and the summary and Trust Score reflect them"
       ],
-      "input": "02-11-2026: 1000, 03-11-2026: 2000, 04-11-2026: 3000",
-      "expected": "30-day sales Rs 6,000; active days 3/30; average Rs 2,000 per active day",
-      "actual": "30-day sales Rs 6,000; active days 3/30; average Rs 2,000 per active day",
-      "remark": "PASS",
       "reqs": [
-        "FR-VEN-7"
-      ]
-    },
-    {
-      "id": "TC-SALE-08",
-      "module": "SALE",
-      "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "",
-      "scenario": "Log a sale with a negative amount",
-      "pre": "-",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Daily sales', enter the date, amount and payment mode",
-        "Click 'Log sale'"
+        "FR-VEN-7",
+        "FR-TS-1"
       ],
-      "input": "Date = 04-11-2026, Amount = -500, Mode = Cash",
-      "expected": "Sale amount must be greater than 0",
-      "actual": "Sale amount must be greater than 0",
-      "remark": "PASS",
-      "reqs": [
-        "FR-VEN-4"
-      ]
-    },
-    {
-      "id": "TC-SALE-09",
-      "module": "SALE",
-      "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "",
-      "scenario": "Non-numeric / empty amount",
-      "pre": "-",
       "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Daily sales', enter the date, amount and payment mode",
-        "Click 'Log sale'"
+        {
+          "no": 1,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Date = 02-11-2026, Amount = 1000, Mode = Cash",
+          "expected": "Sale logged. Your trust score has been updated.",
+          "actual": "Sale logged. Your trust score has been updated.",
+          "result": "PASS",
+          "note": "Positive",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Date = 03-11-2026, Amount = 2000, Mode = Cash",
+          "expected": "Sale logged. Your trust score has been updated.",
+          "actual": "Sale logged. Your trust score has been updated.",
+          "result": "PASS",
+          "note": "Positive",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Date = 04-11-2026, Amount = 3000, Mode = Cash",
+          "expected": "Sale logged. Your trust score has been updated.",
+          "actual": "Sale logged. Your trust score has been updated.",
+          "result": "PASS",
+          "note": "Positive",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "Read the summary cards on the dashboard",
+          "data": "-",
+          "expected": "30-day sales Rs 6,000; active days 3/30; average Rs 2,000 per active day",
+          "actual": "30-day sales Rs 6,000; active days 3/30; average Rs 2,000 per active day",
+          "result": "PASS",
+          "note": "Hand calculation: 6000 / 3 = 2000",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Read the Trust Score card",
+          "data": "-",
+          "expected": "Trust Score 34/100, HIGH RISK",
+          "actual": "Trust Score 34/100, HIGH RISK",
+          "result": "PASS",
+          "note": "Hand calculation: 3/30 x 40 + 20 + 0 + 10 = 34",
+          "defect": ""
+        }
       ],
-      "input": "Date = 04-11-2026, Amount = abc; then Amount = (empty)",
-      "expected": "abc: Sale amount must be a number | Empty: Sale amount must be a number",
-      "actual": "abc: Sale amount must be a number | Empty: Sale amount must be a number",
-      "remark": "PASS",
-      "reqs": [
-        "FR-VEN-4"
-      ]
-    },
-    {
-      "id": "TC-SALE-10",
-      "module": "SALE",
-      "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "DEF-01",
-      "scenario": "Special float values as the amount",
-      "pre": "-",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Daily sales', enter the date, amount and payment mode",
-        "Click 'Log sale'"
-      ],
-      "input": "Date = 04-11-2026, Amount = nan; then Amount = inf",
-      "expected": "nan: Sale amount must be a number | inf: Sale amount must be a number",
-      "actual": "nan: HTTP 500 Internal Server Error (IntegrityError: NOT NULL constraint failed: sales.amount) | inf: Sale amount cannot exceed Rs 1,00,000 per day",
-      "remark": "FAIL",
-      "reqs": [
-        "FR-VEN-4"
-      ]
-    },
-    {
-      "id": "TC-SALE-11",
-      "module": "SALE",
-      "level": "System",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Boundary value - upper limit Rs 1,00,000",
-      "pre": "No sale logged today",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Daily sales', enter the date, amount and payment mode",
-        "Click 'Log sale'"
-      ],
-      "input": "Date = 04-11-2026, Amount = 100000; then Amount = 100000.01",
-      "expected": "100000: Sale logged. Your trust score has been updated. | 100000.01: Sale amount cannot exceed Rs 1,00,000 per day",
-      "actual": "100000: Sale logged. Your trust score has been updated. | 100000.01: Sale amount cannot exceed Rs 1,00,000 per day",
-      "remark": "PASS",
-      "reqs": [
-        "FR-VEN-4"
-      ]
-    },
-    {
-      "id": "TC-SALE-12",
-      "module": "SALE",
-      "level": "System",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Boundary value - lower limit",
-      "pre": "No sale logged today",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Daily sales', enter the date, amount and payment mode",
-        "Click 'Log sale'"
-      ],
-      "input": "Date = 04-11-2026, Amount = 1; then Amount = -0.01",
-      "expected": "1: Sale logged. Your trust score has been updated. | -0.01: Sale amount must be greater than 0",
-      "actual": "1: Sale logged. Your trust score has been updated. | -0.01: Sale amount must be greater than 0",
-      "remark": "PASS",
-      "reqs": [
-        "FR-VEN-4"
-      ]
-    },
-    {
-      "id": "TC-SALE-13",
-      "module": "SALE",
-      "level": "System",
-      "technique": "Security",
-      "defect": "",
-      "scenario": "Payment mode other than Cash / UPI (forged request)",
-      "pre": "-",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Send the sales form with a payment mode that is not in the list"
-      ],
-      "input": "Date = 04-11-2026, Amount = 1500, Mode = CARD; then Mode = (empty)",
-      "expected": "CARD: Payment mode must be CASH or UPI | Empty: Payment mode must be CASH or UPI",
-      "actual": "CARD: Payment mode must be CASH or UPI | Empty: Payment mode must be CASH or UPI",
-      "remark": "PASS",
-      "reqs": [
-        "FR-VEN-3"
-      ]
-    },
-    {
-      "id": "TC-SALE-14",
-      "module": "SALE",
-      "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "",
-      "scenario": "Invalid / empty date",
-      "pre": "-",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Daily sales', enter the date, amount and payment mode",
-        "Click 'Log sale'"
-      ],
-      "input": "Date = 2026-02-30 (no such day); then Date = (empty); Amount = 1500, Mode = UPI",
-      "expected": "2026-02-30: Enter a valid date (YYYY-MM-DD) | Empty: Enter a valid date (YYYY-MM-DD)",
-      "actual": "2026-02-30: Enter a valid date (YYYY-MM-DD) | Empty: Enter a valid date (YYYY-MM-DD)",
-      "remark": "PASS",
-      "reqs": [
-        "FR-VEN-3"
-      ]
-    },
-    {
-      "id": "TC-SALE-15",
-      "module": "SALE",
-      "level": "System",
-      "technique": "BVA",
-      "defect": "DEF-02",
-      "scenario": "Boundary value - back-dated entry 90 / 91 days old",
-      "pre": "No sales logged",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Daily sales', enter the date, amount and payment mode",
-        "Click 'Log sale'"
-      ],
-      "input": "Date = 06-08-2026 (90 days ago); then Date = 05-08-2026 (91 days ago); Amount = 1500",
-      "expected": "90 days old: Sale logged. Your trust score has been updated. | 91 days old: Sale date cannot be more than 90 days old",
-      "actual": "90 days old: Sale logged. Your trust score has been updated. | 91 days old: Sale logged. Your trust score has been updated.",
-      "remark": "FAIL",
-      "reqs": [
-        "FR-VEN-5"
-      ]
-    },
-    {
-      "id": "TC-SALE-16",
-      "module": "SALE",
-      "level": "System",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Boundary value - today / tomorrow",
-      "pre": "No sale logged today",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Daily sales', enter the date, amount and payment mode",
-        "Click 'Log sale'"
-      ],
-      "input": "Date = 04-11-2026 (today); then Date = 05-11-2026 (tomorrow); Amount = 1500",
-      "expected": "Today: Sale logged. Your trust score has been updated. | Tomorrow: Sale date cannot be in the future",
-      "actual": "Today: Sale logged. Your trust score has been updated. | Tomorrow: Sale date cannot be in the future",
-      "remark": "PASS",
-      "reqs": [
-        "FR-VEN-5"
-      ]
-    },
-    {
-      "id": "TC-SALE-17",
-      "module": "SALE",
-      "level": "System",
-      "technique": "Combination",
-      "defect": "",
-      "scenario": "Several invalid fields at once (combination)",
-      "pre": "-",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Daily sales', enter the date, amount and payment mode",
-        "Click 'Log sale'"
-      ],
-      "input": "(a) Amount = 0, Date = tomorrow, Mode = CARD; (b) Amount = 1500, Date = tomorrow, Mode = CARD",
-      "expected": "Amount + date + mode invalid: Sale amount must be greater than 0 | Date + mode invalid: Sale date cannot be in the future",
-      "actual": "Amount + date + mode invalid: Sale amount must be greater than 0 | Date + mode invalid: Sale date cannot be in the future",
-      "remark": "PASS",
-      "reqs": [
-        "FR-VEN-4",
-        "FR-VEN-5"
-      ]
-    },
-    {
-      "id": "TC-SALE-18",
-      "module": "SALE",
-      "level": "System",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Boundary value - years of vending 60 / 61 / -1",
-      "pre": "Ramesh is registered but has NOT saved his business profile",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Business profile', enter the values",
-        "Click 'Save profile'"
-      ],
-      "input": "Business = Fruits & vegetables, Zone = Sector 14 Market, Years = 60; then 61; then -1",
-      "expected": "60: Profile saved. | 61: Years of vending must be between 0 and 60 | -1: Years of vending must be between 0 and 60",
-      "actual": "60: Profile saved. | 61: Years of vending must be between 0 and 60 | -1: Years of vending must be between 0 and 60",
-      "remark": "PASS",
-      "reqs": [
-        "FR-VEN-2"
-      ]
-    },
-    {
-      "id": "TC-SALE-19",
-      "module": "SALE",
-      "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "",
-      "scenario": "Profile with a mandatory field missing",
-      "pre": "Ramesh is registered but has NOT saved his business profile",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Business profile', enter the values",
-        "Click 'Save profile'"
-      ],
-      "input": "Business type = (empty); then Vending zone = (empty); then Years = abc",
-      "expected": "No business type: Business type and vending zone are required | No zone: Business type and vending zone are required | Years = abc: Years of vending must be a number",
-      "actual": "No business type: Business type and vending zone are required | No zone: Business type and vending zone are required | Years = abc: Years of vending must be a number",
-      "remark": "PASS",
-      "reqs": [
-        "FR-VEN-2"
-      ]
+      "result": "PASS"
     },
     {
       "id": "TC-TS-01",
       "module": "TS",
-      "level": "Unit",
-      "technique": "Positive",
-      "defect": "",
-      "scenario": "Ideal vendor - maximum observable score",
-      "pre": "No EMI due yet",
-      "steps": [
-        "Call compute_trust_score() with the input values"
+      "name": "Trust Score of a new vendor on the dashboard",
+      "level": "System",
+      "description": "Test the score, risk band and component points shown to a new vendor, and that the score is updated and used for loan eligibility.",
+      "pre": [
+        "Vendor Sunita Devi (9812345670 / sunita123) is registered; her profile shows 0 years of vending; she has no sales, vouches or loans"
       ],
-      "input": "Active days = 30/30, EMIs due = 0, Vouches = 3, Years = 5",
-      "expected": "40 + 20 + 10 + 10 = 80 -> LOW RISK, eligible",
-      "actual": "40 + 20 + 10 + 10 = 80 -> LOW RISK, eligible",
-      "remark": "PASS",
+      "post": [
+        "One sale is stored; no loan is created"
+      ],
       "reqs": [
-        "FR-TS-2",
+        "FR-TS-1",
         "FR-TS-3",
-        "FR-TS-4"
-      ]
+        "FR-TS-4",
+        "FR-TS-5",
+        "FR-TS-6"
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "Log in as Sunita and read the Trust Score card",
+          "data": "9812345670 / sunita123",
+          "expected": "Trust Score 20/100, HIGH RISK",
+          "actual": "Trust Score 20/100, HIGH RISK",
+          "result": "PASS",
+          "note": "Hand calculation: 0 + 20 (no EMI due) + 0 + 0",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Read the four component bars",
+          "data": "-",
+          "expected": "Sales consistency 0/40, Repayment history 20/40, Peer vouching 0/10, Vending tenure 0/10",
+          "actual": "Sales consistency 0/40, Repayment history 20/40, Peer vouching 0/10, Vending tenure 0/10",
+          "result": "PASS",
+          "note": "Explainable score",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "In 'Daily sales' enter the values and click 'Log sale'",
+          "data": "Date = 04-11-2026, Amount = 800, Mode = Cash",
+          "expected": "Sale logged. Your trust score has been updated.",
+          "actual": "Sale logged. Your trust score has been updated.",
+          "result": "PASS",
+          "note": "Positive",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "Read the Trust Score card again",
+          "data": "-",
+          "expected": "Trust Score 21/100, HIGH RISK",
+          "actual": "Trust Score 21/100, HIGH RISK",
+          "result": "PASS",
+          "note": "1/30 x 40 = 1.3; 1.3 + 20 = 21",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "In 'Micro-credit' enter the amount and click 'Apply for loan'",
+          "data": "Amount = 10000",
+          "expected": "Trust score 21 is below 40. Not eligible",
+          "actual": "Trust score 21 is below 40. Not eligible",
+          "result": "PASS",
+          "note": "Negative - score below 40",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
       "id": "TC-TS-02",
       "module": "TS",
+      "name": "Formula - loan eligibility boundary (39 / 40)",
       "level": "Unit",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Boundary value - score exactly 40",
-      "pre": "No EMI due yet",
-      "steps": [
-        "Call compute_trust_score() with the input values"
+      "description": "Test the score on both sides of the eligibility cut-off of 40.",
+      "pre": [
+        "compute_trust_score() is called directly (unit test)",
+        "Window = 30 days; no EMI due yet (repayment = 20); Vouches = 0; Years = 0"
       ],
-      "input": "Active days = 15/30, EMIs due = 0, Vouches = 0, Years = 0",
-      "expected": "20 + 20 + 0 + 0 = 40 -> MEDIUM RISK, eligible",
-      "actual": "20 + 20 + 0 + 0 = 40 -> MEDIUM RISK, eligible",
-      "remark": "PASS",
+      "post": [
+        "Score, band and eligibility are returned; no stored data changes"
+      ],
       "reqs": [
         "FR-TS-2",
         "FR-TS-4",
         "FR-TS-5"
-      ]
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "Call compute_trust_score() with the input",
+          "data": "Active days = 14",
+          "expected": "18.7 + 20 + 0 + 0 = 39 -> HIGH RISK, not eligible",
+          "actual": "18.7 + 20 + 0 + 0 = 39 -> HIGH RISK, not eligible",
+          "result": "PASS",
+          "note": "BVA - just below 40",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Call compute_trust_score() with the input",
+          "data": "Active days = 15",
+          "expected": "20 + 20 + 0 + 0 = 40 -> MEDIUM RISK, eligible",
+          "actual": "20 + 20 + 0 + 0 = 40 -> MEDIUM RISK, eligible",
+          "result": "PASS",
+          "note": "BVA - on 40",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Call compute_trust_score() with the input",
+          "data": "Active days = 16",
+          "expected": "21.3 + 20 + 0 + 0 = 41 -> MEDIUM RISK, eligible",
+          "actual": "21.3 + 20 + 0 + 0 = 41 -> MEDIUM RISK, eligible",
+          "result": "PASS",
+          "note": "BVA - just above 40",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
       "id": "TC-TS-03",
       "module": "TS",
+      "name": "Formula - risk band boundary (69 / 70)",
       "level": "Unit",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Boundary value - score just below 40",
-      "pre": "No EMI due yet",
-      "steps": [
-        "Call compute_trust_score() with the input values"
+      "description": "Test the score on both sides of the MEDIUM / LOW RISK boundary.",
+      "pre": [
+        "compute_trust_score() is called directly (unit test)",
+        "Window = 30 days; no EMI due yet (repayment = 20); Years = 5"
       ],
-      "input": "Active days = 14/30, EMIs due = 0, Vouches = 0, Years = 0",
-      "expected": "18.7 + 20 + 0 + 0 = 39 -> HIGH RISK, not eligible",
-      "actual": "18.7 + 20 + 0 + 0 = 39 -> HIGH RISK, not eligible",
-      "remark": "PASS",
+      "post": [
+        "Score, band and eligibility are returned; no stored data changes"
+      ],
       "reqs": [
         "FR-TS-2",
-        "FR-TS-4",
-        "FR-TS-5"
-      ]
+        "FR-TS-4"
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "Call compute_trust_score() with the input",
+          "data": "Active days = 29, Vouches = 0",
+          "expected": "38.7 + 20 + 0 + 10 = 69 -> MEDIUM RISK, eligible",
+          "actual": "38.7 + 20 + 0 + 10 = 69 -> MEDIUM RISK, eligible",
+          "result": "PASS",
+          "note": "BVA - just below 70",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Call compute_trust_score() with the input",
+          "data": "Active days = 30, Vouches = 0",
+          "expected": "40 + 20 + 0 + 10 = 70 -> LOW RISK, eligible",
+          "actual": "40 + 20 + 0 + 10 = 70 -> LOW RISK, eligible",
+          "result": "PASS",
+          "note": "BVA - on 70",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Call compute_trust_score() with the input",
+          "data": "Active days = 28, Vouches = 1",
+          "expected": "37.3 + 20 + 3.3 + 10 = 71 -> LOW RISK, eligible",
+          "actual": "37.3 + 20 + 3.3 + 10 = 71 -> LOW RISK, eligible",
+          "result": "PASS",
+          "note": "BVA - just above 70",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
       "id": "TC-TS-04",
       "module": "TS",
+      "name": "Formula - minimum, maximum and repayment history",
       "level": "Unit",
-      "technique": "Positive",
-      "defect": "",
-      "scenario": "Vendor with a partial repayment record",
-      "pre": "-",
-      "steps": [
-        "Call compute_trust_score() with the input values"
+      "description": "Test the lowest and highest possible scores and the effect of the repayment record.",
+      "pre": [
+        "compute_trust_score() is called directly (unit test)",
+        "Window = 30 days"
       ],
-      "input": "Active days = 24/30, On-time EMIs = 6 of 12 due, Vouches = 1, Years = 2",
-      "expected": "32 + 20 + 3.3 + 4 = 59 -> MEDIUM RISK, eligible",
-      "actual": "32 + 20 + 3.3 + 4 = 59 -> MEDIUM RISK, eligible",
-      "remark": "PASS",
+      "post": [
+        "Score, band and eligibility are returned; no stored data changes"
+      ],
       "reqs": [
         "FR-TS-2",
+        "FR-TS-3",
         "FR-TS-4"
-      ]
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "Call compute_trust_score() with the input",
+          "data": "Active days = 0, EMIs due = 0, Vouches = 0, Years = 0",
+          "expected": "0 + 20 + 0 + 0 = 20 -> HIGH RISK, not eligible",
+          "actual": "0 + 20 + 0 + 0 = 20 -> HIGH RISK, not eligible",
+          "result": "PASS",
+          "note": "BVA - minimum",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Call compute_trust_score() with the input",
+          "data": "Active days = 30, On-time EMIs = 12 of 12, Vouches = 3, Years = 5",
+          "expected": "40 + 40 + 10 + 10 = 100 -> LOW RISK, eligible",
+          "actual": "40 + 40 + 10 + 10 = 100 -> LOW RISK, eligible",
+          "result": "PASS",
+          "note": "BVA - maximum",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Call compute_trust_score() with the input",
+          "data": "Active days = 30, On-time EMIs = 0 of 6, Vouches = 0, Years = 5",
+          "expected": "40 + 0 + 0 + 10 = 50 -> MEDIUM RISK, eligible",
+          "actual": "40 + 0 + 0 + 10 = 50 -> MEDIUM RISK, eligible",
+          "result": "PASS",
+          "note": "No EMI paid on time",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "Call compute_trust_score() with the input",
+          "data": "Active days = 24, On-time EMIs = 6 of 12, Vouches = 1, Years = 2",
+          "expected": "32 + 20 + 3.3 + 4 = 59 -> MEDIUM RISK, eligible",
+          "actual": "32 + 20 + 3.3 + 4 = 59 -> MEDIUM RISK, eligible",
+          "result": "PASS",
+          "note": "Positive - partial record",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
       "id": "TC-TS-05",
       "module": "TS",
+      "name": "Formula - caps on vouches and tenure",
       "level": "Unit",
-      "technique": "Negative",
-      "defect": "",
-      "scenario": "Invalid input - active days exceed the window",
-      "pre": "-",
-      "steps": [
-        "Call compute_trust_score() with the input values"
+      "description": "Test that only 3 vouches and 5 years of vending count toward the score.",
+      "pre": [
+        "compute_trust_score() is called directly (unit test)",
+        "Active days = 30 of 30; no EMI due yet (repayment = 20)"
       ],
-      "input": "Active days = 35, Window = 30",
-      "expected": "Active days cannot exceed the observation window",
-      "actual": "Active days cannot exceed the observation window",
-      "remark": "PASS",
+      "post": [
+        "Score, band and eligibility are returned; no stored data changes"
+      ],
       "reqs": [
-        "FR-TS-1"
-      ]
+        "FR-TS-2",
+        "BR-8"
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "Call compute_trust_score() with the input",
+          "data": "Vouches = 3, Years = 5",
+          "expected": "40 + 20 + 10 + 10 = 80 -> LOW RISK, eligible",
+          "actual": "40 + 20 + 10 + 10 = 80 -> LOW RISK, eligible",
+          "result": "PASS",
+          "note": "BVA - on the caps",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Call compute_trust_score() with the input",
+          "data": "Vouches = 7, Years = 20",
+          "expected": "40 + 20 + 10 + 10 = 80 -> LOW RISK, eligible",
+          "actual": "40 + 20 + 10 + 10 = 80 -> LOW RISK, eligible",
+          "result": "PASS",
+          "note": "BVA - above the caps (same score)",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Call compute_trust_score() with the input",
+          "data": "Vouches = 2, Years = 4",
+          "expected": "40 + 20 + 6.7 + 8 = 75 -> LOW RISK, eligible",
+          "actual": "40 + 20 + 6.7 + 8 = 75 -> LOW RISK, eligible",
+          "result": "PASS",
+          "note": "BVA - below the caps",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
       "id": "TC-TS-06",
       "module": "TS",
-      "level": "System",
-      "technique": "Positive",
-      "defect": "",
-      "scenario": "New vendor sees the score on the dashboard",
-      "pre": "Vendor 'Sunita Devi' (9812345670 / sunita123) has a profile with 0 years of vending and no sales",
-      "steps": [
-        "Log in as Sunita",
-        "Read the Trust Score card"
-      ],
-      "input": "Mobile = 9812345670, Password = sunita123",
-      "expected": "Dashboard shows Trust Score 20/100, HIGH RISK",
-      "actual": "Dashboard shows Trust Score 20/100, HIGH RISK",
-      "remark": "PASS",
-      "reqs": [
-        "FR-TS-3",
-        "FR-TS-4",
-        "FR-TS-6"
-      ]
-    },
-    {
-      "id": "TC-TS-07",
-      "module": "TS",
+      "name": "Formula - invalid inputs",
       "level": "Unit",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Minimum score - brand-new vendor",
-      "pre": "No EMI due yet",
-      "steps": [
-        "Call compute_trust_score() with the input values"
+      "description": "Test that impossible input values are rejected with a clear message.",
+      "pre": [
+        "compute_trust_score() is called directly (unit test)"
       ],
-      "input": "Active days = 0/30, EMIs due = 0, Vouches = 0, Years = 0",
-      "expected": "0 + 20 + 0 + 0 = 20 -> HIGH RISK, not eligible",
-      "actual": "0 + 20 + 0 + 0 = 20 -> HIGH RISK, not eligible",
-      "remark": "PASS",
-      "reqs": [
-        "FR-TS-2",
-        "FR-TS-3"
-      ]
-    },
-    {
-      "id": "TC-TS-08",
-      "module": "TS",
-      "level": "Unit",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Maximum score - perfect record",
-      "pre": "-",
-      "steps": [
-        "Call compute_trust_score() with the input values"
+      "post": [
+        "No score is returned for invalid input"
       ],
-      "input": "Active days = 30/30, On-time EMIs = 12 of 12 due, Vouches = 3, Years = 5",
-      "expected": "40 + 40 + 10 + 10 = 100 -> LOW RISK, eligible",
-      "actual": "40 + 40 + 10 + 10 = 100 -> LOW RISK, eligible",
-      "remark": "PASS",
-      "reqs": [
-        "FR-TS-2",
-        "FR-TS-4"
-      ]
-    },
-    {
-      "id": "TC-TS-09",
-      "module": "TS",
-      "level": "Unit",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Vouches and years above their caps",
-      "pre": "No EMI due yet",
-      "steps": [
-        "Call compute_trust_score() with the input values"
-      ],
-      "input": "Active days = 30/30, EMIs due = 0, Vouches = 7 (cap 3), Years = 20 (cap 5)",
-      "expected": "40 + 20 + 10 + 10 = 80 -> LOW RISK, eligible",
-      "actual": "40 + 20 + 10 + 10 = 80 -> LOW RISK, eligible",
-      "remark": "PASS",
-      "reqs": [
-        "FR-TS-2"
-      ]
-    },
-    {
-      "id": "TC-TS-10",
-      "module": "TS",
-      "level": "Unit",
-      "technique": "Positive",
-      "defect": "",
-      "scenario": "Good sales but no EMI paid on time",
-      "pre": "-",
-      "steps": [
-        "Call compute_trust_score() with the input values"
-      ],
-      "input": "Active days = 30/30, On-time EMIs = 0 of 6 due, Vouches = 0, Years = 5",
-      "expected": "40 + 0 + 0 + 10 = 50 -> MEDIUM RISK, eligible",
-      "actual": "40 + 0 + 0 + 10 = 50 -> MEDIUM RISK, eligible",
-      "remark": "PASS",
-      "reqs": [
-        "FR-TS-2",
-        "FR-TS-4"
-      ]
-    },
-    {
-      "id": "TC-TS-11",
-      "module": "TS",
-      "level": "Unit",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Boundary value - score 69 / 70 (MEDIUM / LOW RISK)",
-      "pre": "No EMI due yet",
-      "steps": [
-        "Call compute_trust_score() with the input values"
-      ],
-      "input": "Active days = 29/30, then 30/30; EMIs due = 0, Vouches = 0, Years = 5",
-      "expected": "29 days: 38.7 + 20 + 0 + 10 = 69 -> MEDIUM RISK, eligible | 30 days: 40 + 20 + 0 + 10 = 70 -> LOW RISK, eligible",
-      "actual": "29 days: 38.7 + 20 + 0 + 10 = 69 -> MEDIUM RISK, eligible | 30 days: 40 + 20 + 0 + 10 = 70 -> LOW RISK, eligible",
-      "remark": "PASS",
-      "reqs": [
-        "FR-TS-4"
-      ]
-    },
-    {
-      "id": "TC-TS-12",
-      "module": "TS",
-      "level": "Unit",
-      "technique": "Negative",
-      "defect": "",
-      "scenario": "Invalid input - negative vouches",
-      "pre": "-",
-      "steps": [
-        "Call compute_trust_score() with the input values"
-      ],
-      "input": "Active days = 30/30, EMIs due = 0, Vouches = -1, Years = 5",
-      "expected": "Score inputs cannot be negative",
-      "actual": "Score inputs cannot be negative",
-      "remark": "PASS",
       "reqs": [
         "FR-TS-1"
-      ]
-    },
-    {
-      "id": "TC-TS-13",
-      "module": "TS",
-      "level": "Unit",
-      "technique": "Negative",
-      "defect": "",
-      "scenario": "Invalid input - on-time EMIs exceed EMIs due",
-      "pre": "-",
-      "steps": [
-        "Call compute_trust_score() with the input values"
       ],
-      "input": "Active days = 30/30, On-time EMIs = 5, EMIs due = 3, Vouches = 0, Years = 5",
-      "expected": "On-time EMIs cannot exceed EMIs due",
-      "actual": "On-time EMIs cannot exceed EMIs due",
-      "remark": "PASS",
-      "reqs": [
-        "FR-TS-1"
-      ]
-    },
-    {
-      "id": "TC-TS-14",
-      "module": "TS",
-      "level": "System",
-      "technique": "Positive",
-      "defect": "",
-      "scenario": "Score goes up after a sale is logged",
-      "pre": "Vendor 'Sunita Devi' (9812345670 / sunita123) has a profile with 0 years of vending and no sales",
       "steps": [
-        "Log in as Sunita and read the score",
-        "Log today's sale",
-        "Read the score again"
+        {
+          "no": 1,
+          "action": "Call compute_trust_score() with the input",
+          "data": "Active days = 35, Window = 30",
+          "expected": "Active days cannot exceed the observation window",
+          "actual": "Active days cannot exceed the observation window",
+          "result": "PASS",
+          "note": "Negative - more days than the window",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Call compute_trust_score() with the input",
+          "data": "Active days = 30, Vouches = -1, Years = 5",
+          "expected": "Score inputs cannot be negative",
+          "actual": "Score inputs cannot be negative",
+          "result": "PASS",
+          "note": "Negative - negative value",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Call compute_trust_score() with the input",
+          "data": "Active days = 30, On-time EMIs = 5, EMIs due = 3",
+          "expected": "On-time EMIs cannot exceed EMIs due",
+          "actual": "On-time EMIs cannot exceed EMIs due",
+          "result": "PASS",
+          "note": "Negative - inconsistent values",
+          "defect": ""
+        }
       ],
-      "input": "Date = 04-11-2026, Amount = 800, Mode = Cash",
-      "expected": "Before: 20/100 | After logging 1 sale: 21/100, HIGH RISK",
-      "actual": "Before: 20/100 | After logging 1 sale: 21/100, HIGH RISK",
-      "remark": "PASS",
-      "reqs": [
-        "FR-TS-1",
-        "FR-VEN-3"
-      ]
+      "result": "PASS"
     },
     {
       "id": "TC-LOAN-01",
       "module": "LOAN",
+      "name": "Eligible vendor applies for a Tier-1 loan",
       "level": "System",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Eligible vendor applies for a Tier-1 loan",
-      "pre": "Ramesh has no loan",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Micro-credit', enter the amount",
-        "Click 'Apply for loan'"
+      "description": "Test a loan application at and above the Tier-1 limit and the one-active-loan rule.",
+      "pre": [
+        "Vendor Ramesh Kumar (9876543210 / ramesh123) is registered and logged in",
+        "His profile shows 5 years of vending and he logged a sale on each of the last 30 days, so his Trust Score is 40 + 20 + 0 + 10 = 70 (LOW RISK)",
+        "He has no loan"
       ],
-      "input": "Amount = 15000 (Trust Score 70, Tier 1 limit 15,000)",
-      "expected": "Loan application #1 submitted. Status: PENDING.",
-      "actual": "Loan application #1 submitted. Status: PENDING.",
-      "remark": "PASS",
+      "post": [
+        "Application #1 is stored as PENDING with its tier, tenure, interest rate and Trust Score"
+      ],
       "reqs": [
         "FR-LN-1",
+        "FR-LN-2",
+        "FR-LN-4",
+        "FR-LN-5",
         "FR-LN-6"
-      ]
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "Read the Trust Score and the eligible-limit card on the dashboard",
+          "data": "-",
+          "expected": "Trust Score 70/100, LOW RISK; Eligible limit Rs 15,000 (Tier 1)",
+          "actual": "Trust Score 70/100, LOW RISK; Eligible limit Rs 15,000 (Tier 1)",
+          "result": "PASS",
+          "note": "Positive",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "In 'Micro-credit' enter the amount and click 'Apply for loan'",
+          "data": "Amount = 15000.01",
+          "expected": "Amount exceeds Tier 1 limit of Rs 15,000",
+          "actual": "Amount exceeds Tier 1 limit of Rs 15,000",
+          "result": "PASS",
+          "note": "BVA - just above the tier limit",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "In 'Micro-credit' enter the amount and click 'Apply for loan'",
+          "data": "Amount = 15000",
+          "expected": "Loan application #1 submitted. Status: PENDING.",
+          "actual": "Loan application #1 submitted. Status: PENDING.",
+          "result": "PASS",
+          "note": "BVA - on the tier limit",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "In 'Micro-credit' enter the amount and click 'Apply for loan'",
+          "data": "Amount = 5000",
+          "expected": "You already have an active loan",
+          "actual": "You already have an active loan",
+          "result": "PASS",
+          "note": "Negative - one active loan only",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "1 loan stored: #1 Rs 15000, Tier 1, 12 months, 12% p.a., Trust Score 70, PENDING",
+          "actual": "1 loan stored: #1 Rs 15000, Tier 1, 12 months, 12% p.a., Trust Score 70, PENDING",
+          "result": "PASS",
+          "note": "",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
       "id": "TC-LOAN-02",
       "module": "LOAN",
+      "name": "Loan amount - invalid values",
       "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "",
-      "scenario": "Amount above the tier limit",
-      "pre": "Ramesh has no loan",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Enter an amount above Rs 15,000",
-        "Click 'Apply for loan'"
+      "description": "Test that zero, negative, non-numeric and special values are rejected as the loan amount.",
+      "pre": [
+        "Vendor Ramesh Kumar (9876543210 / ramesh123) is registered and logged in",
+        "His profile shows 5 years of vending and he logged a sale on each of the last 30 days, so his Trust Score is 40 + 20 + 0 + 10 = 70 (LOW RISK)",
+        "He has no loan"
       ],
-      "input": "Amount = 20000",
-      "expected": "Amount exceeds Tier 1 limit of Rs 15,000",
-      "actual": "Amount exceeds Tier 1 limit of Rs 15,000",
-      "remark": "PASS",
+      "post": [
+        "No loan application is stored"
+      ],
       "reqs": [
-        "FR-LN-2",
         "FR-LN-4"
-      ]
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "In 'Micro-credit' enter the amount and click 'Apply for loan'",
+          "data": "Amount = 0",
+          "expected": "Loan amount must be greater than 0",
+          "actual": "Loan amount must be greater than 0",
+          "result": "PASS",
+          "note": "BVA - zero",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "In 'Micro-credit' enter the amount and click 'Apply for loan'",
+          "data": "Amount = -5000",
+          "expected": "Loan amount must be greater than 0",
+          "actual": "Loan amount must be greater than 0",
+          "result": "PASS",
+          "note": "Negative (EP) - negative",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "In 'Micro-credit' enter the amount and click 'Apply for loan'",
+          "data": "Amount = abc",
+          "expected": "Loan amount must be a number",
+          "actual": "Loan amount must be a number",
+          "result": "PASS",
+          "note": "Negative (EP) - text",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "In 'Micro-credit' enter the amount and click 'Apply for loan'",
+          "data": "Amount = (empty)",
+          "expected": "Loan amount must be a number",
+          "actual": "Loan amount must be a number",
+          "result": "PASS",
+          "note": "Negative (EP) - empty",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "In 'Micro-credit' enter the amount and click 'Apply for loan'",
+          "data": "Amount = nan",
+          "expected": "Loan amount must be a number",
+          "actual": "HTTP 500 Internal Server Error (IntegrityError: NOT NULL constraint failed: loans.amount)",
+          "result": "FAIL",
+          "note": "Negative (EP) - special value",
+          "defect": "DEF-01"
+        },
+        {
+          "no": 6,
+          "action": "In 'Micro-credit' enter the amount and click 'Apply for loan'",
+          "data": "Amount = inf",
+          "expected": "Loan amount must be a number",
+          "actual": "Amount exceeds Tier 1 limit of Rs 15,000",
+          "result": "FAIL",
+          "note": "Negative (EP) - special value",
+          "defect": "DEF-01"
+        },
+        {
+          "no": 7,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "0 loans stored",
+          "actual": "0 loans stored",
+          "result": "PASS",
+          "note": "",
+          "defect": ""
+        }
+      ],
+      "result": "FAIL"
     },
     {
       "id": "TC-LOAN-03",
       "module": "LOAN",
+      "name": "Vendor who is not eligible applies",
       "level": "System",
-      "technique": "Negative",
-      "defect": "",
-      "scenario": "Vendor with a low Trust Score applies",
-      "pre": "Vendor 'Sunita Devi' (9812345670 / sunita123) has a profile with 0 years of vending and no sales (score 20)",
-      "steps": [
-        "Log in as Sunita",
-        "Enter the amount",
-        "Click 'Apply for loan'"
+      "description": "Test that a vendor with a Trust Score below 40, or without a profile, cannot apply.",
+      "pre": [
+        "Vendor Sunita Devi (9812345670 / sunita123): profile with 0 years of vending, no sales, Trust Score 20",
+        "Vendor Mohan Lal (9898989898 / mohan123) is registered but has NOT saved a profile"
       ],
-      "input": "Amount = 10000",
-      "expected": "Trust score 20 is below 40. Not eligible",
-      "actual": "Trust score 20 is below 40. Not eligible",
-      "remark": "PASS",
+      "post": [
+        "No loan application is stored"
+      ],
       "reqs": [
         "FR-TS-5",
+        "FR-VEN-6",
         "BR-4"
-      ]
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "Log in as Sunita. In 'Micro-credit' enter the amount and click 'Apply for loan'",
+          "data": "Amount = 10000",
+          "expected": "Trust score 20 is below 40. Not eligible",
+          "actual": "Trust score 20 is below 40. Not eligible",
+          "result": "PASS",
+          "note": "Negative - score below 40",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "In 'Micro-credit' enter the amount and click 'Apply for loan'",
+          "data": "Amount = 20000 (also above the Tier-1 limit)",
+          "expected": "Trust score 20 is below 40. Not eligible",
+          "actual": "Trust score 20 is below 40. Not eligible",
+          "result": "PASS",
+          "note": "Combination - eligibility is checked first",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Log in as Mohan. In 'Micro-credit' enter the amount and click 'Apply for loan'",
+          "data": "Amount = 10000",
+          "expected": "Complete your vendor profile first",
+          "actual": "Complete your vendor profile first",
+          "result": "PASS",
+          "note": "Negative - no profile",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "0 loans stored",
+          "actual": "0 loans stored",
+          "result": "PASS",
+          "note": "",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
       "id": "TC-LOAN-04",
       "module": "LOAN",
+      "name": "Bank officer approves and disburses a loan",
       "level": "System",
-      "technique": "Negative",
-      "defect": "",
-      "scenario": "Second application while one is pending",
-      "pre": "Ramesh's application #1 for Rs 15,000 is PENDING",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Enter the amount",
-        "Click 'Apply for loan'"
+      "description": "Test approval and disbursal, and that the loan cannot skip or repeat a state.",
+      "pre": [
+        "Ramesh's application #1 for Rs 15,000 (Tier 1) is PENDING",
+        "Bank officer Anil Sharma (9123456780 / bank123) is logged in"
       ],
-      "input": "Amount = 5000",
-      "expected": "You already have an active loan",
-      "actual": "You already have an active loan",
-      "remark": "PASS",
-      "reqs": [
-        "FR-LN-5",
-        "BR-2"
-      ]
-    },
-    {
-      "id": "TC-LOAN-05",
-      "module": "LOAN",
-      "level": "System",
-      "technique": "Negative",
-      "defect": "",
-      "scenario": "Officer rejects without remarks",
-      "pre": "Ramesh's application #1 is PENDING",
-      "steps": [
-        "Log in as bank officer (9123456780 / bank123)",
-        "Leave the Remarks box empty",
-        "Click 'Reject' on application #1"
+      "post": [
+        "Loan #1 is DISBURSED with today's date and 12 EMIs are created"
       ],
-      "input": "Remarks = (empty), Decision = Reject",
-      "expected": "Remarks are required when rejecting",
-      "actual": "Remarks are required when rejecting",
-      "remark": "PASS",
-      "reqs": [
-        "FR-BNK-3",
-        "BR-5"
-      ]
-    },
-    {
-      "id": "TC-LOAN-06",
-      "module": "LOAN",
-      "level": "System",
-      "technique": "Security",
-      "defect": "",
-      "scenario": "Vendor tries to open the bank officer page",
-      "pre": "-",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Type the officer page address in the browser"
-      ],
-      "input": "URL = /officer",
-      "expected": "You are not allowed to open that page.",
-      "actual": "You are not allowed to open that page.",
-      "remark": "PASS",
-      "reqs": [
-        "FR-AUTH-7",
-        "FR-BNK-4",
-        "BR-1"
-      ]
-    },
-    {
-      "id": "TC-LOAN-07",
-      "module": "LOAN",
-      "level": "System",
-      "technique": "Positive",
-      "defect": "",
-      "scenario": "Officer approves and disburses",
-      "pre": "Ramesh's application #1 is PENDING",
-      "steps": [
-        "Log in as bank officer (9123456780 / bank123)",
-        "Click 'Approve' on application #1",
-        "Click 'Disburse' on application #1"
-      ],
-      "input": "Decision = Approve, then Disburse",
-      "expected": "Loan #1 APPROVED. | Loan #1 disbursed. 12 EMIs of Rs 1332.73 scheduled.",
-      "actual": "Loan #1 APPROVED. | Loan #1 disbursed. 12 EMIs of Rs 1332.73 scheduled.",
-      "remark": "PASS",
       "reqs": [
         "FR-BNK-2",
         "FR-BNK-5",
         "FR-BNK-6"
-      ]
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "Send a Disburse request for #1 (the button appears only after approval)",
+          "data": "Loan #1",
+          "expected": "Only APPROVED loans can be disbursed",
+          "actual": "Only APPROVED loans can be disbursed",
+          "result": "PASS",
+          "note": "Negative - invalid state change",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Click 'Approve' on application #1",
+          "data": "Decision = Approve, Remarks = (empty)",
+          "expected": "Loan #1 APPROVED.",
+          "actual": "Loan #1 APPROVED.",
+          "result": "PASS",
+          "note": "Positive",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Send an Approve request for #1 again",
+          "data": "Decision = Approve",
+          "expected": "Only PENDING applications can be reviewed",
+          "actual": "Only PENDING applications can be reviewed",
+          "result": "PASS",
+          "note": "Negative - invalid state change",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "Click 'Disburse' on loan #1",
+          "data": "Loan #1",
+          "expected": "Loan #1 disbursed. 12 EMIs of Rs 1332.73 scheduled.",
+          "actual": "Loan #1 disbursed. 12 EMIs of Rs 1332.73 scheduled.",
+          "result": "PASS",
+          "note": "Positive - EMI from hand calculation",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "Loan #1 DISBURSED on 04-11-2026; 12 EMIs created",
+          "actual": "Loan #1 DISBURSED on 04-11-2026; 12 EMIs created",
+          "result": "PASS",
+          "note": "",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
-      "id": "TC-LOAN-08",
+      "id": "TC-LOAN-05",
       "module": "LOAN",
+      "name": "Officer rejects; vendor re-applies and withdraws",
       "level": "System",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Zero / negative loan amount",
-      "pre": "Ramesh has no loan",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Micro-credit', enter the amount",
-        "Click 'Apply for loan'"
+      "description": "Test rejection rules (remarks required, valid decision, existing loan), that the vendor sees the remarks, and withdrawal.",
+      "pre": [
+        "Ramesh's application #1 for Rs 15,000 is PENDING; Ramesh's Trust Score is 70",
+        "Bank officer Anil Sharma (9123456780 / bank123) is logged in"
       ],
-      "input": "Amount = 0; then Amount = -5000",
-      "expected": "0: Loan amount must be greater than 0 | -5000: Loan amount must be greater than 0",
-      "actual": "0: Loan amount must be greater than 0 | -5000: Loan amount must be greater than 0",
-      "remark": "PASS",
-      "reqs": [
-        "FR-LN-4"
-      ]
-    },
-    {
-      "id": "TC-LOAN-09",
-      "module": "LOAN",
-      "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "",
-      "scenario": "Non-numeric / empty loan amount",
-      "pre": "Ramesh has no loan",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Micro-credit', enter the amount",
-        "Click 'Apply for loan'"
+      "post": [
+        "Application #1 is REJECTED with the officer's remarks and application #2 is WITHDRAWN"
       ],
-      "input": "Amount = abc; then Amount = (empty)",
-      "expected": "abc: Loan amount must be a number | Empty: Loan amount must be a number",
-      "actual": "abc: Loan amount must be a number | Empty: Loan amount must be a number",
-      "remark": "PASS",
       "reqs": [
-        "FR-LN-4"
-      ]
-    },
-    {
-      "id": "TC-LOAN-10",
-      "module": "LOAN",
-      "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "DEF-01",
-      "scenario": "Special float values as the loan amount",
-      "pre": "Ramesh has no loan",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Micro-credit', enter the amount",
-        "Click 'Apply for loan'"
-      ],
-      "input": "Amount = nan; then Amount = inf",
-      "expected": "nan: Loan amount must be a number | inf: Loan amount must be a number",
-      "actual": "nan: HTTP 500 Internal Server Error (IntegrityError: NOT NULL constraint failed: loans.amount) | inf: Amount exceeds Tier 1 limit of Rs 15,000",
-      "remark": "FAIL",
-      "reqs": [
-        "FR-LN-4"
-      ]
-    },
-    {
-      "id": "TC-LOAN-11",
-      "module": "LOAN",
-      "level": "System",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Boundary value - Tier-1 limit 15,000 / 15,000.01",
-      "pre": "Ramesh has no loan",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Micro-credit', enter the amount",
-        "Click 'Apply for loan'"
-      ],
-      "input": "Amount = 15000; then Amount = 15000.01 (fresh database each time)",
-      "expected": "15000: Loan application #1 submitted. Status: PENDING. | 15000.01: Amount exceeds Tier 1 limit of Rs 15,000",
-      "actual": "15000: Loan application #1 submitted. Status: PENDING. | 15000.01: Amount exceeds Tier 1 limit of Rs 15,000",
-      "remark": "PASS",
-      "reqs": [
-        "FR-LN-2",
-        "FR-LN-4"
-      ]
-    },
-    {
-      "id": "TC-LOAN-12",
-      "module": "LOAN",
-      "level": "System",
-      "technique": "Negative",
-      "defect": "",
-      "scenario": "Apply before saving the business profile",
-      "pre": "Ramesh is registered but has NOT saved his business profile",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Micro-credit', enter the amount",
-        "Click 'Apply for loan'"
-      ],
-      "input": "Amount = 10000",
-      "expected": "Complete your vendor profile first",
-      "actual": "Complete your vendor profile first",
-      "remark": "PASS",
-      "reqs": [
-        "FR-TS-1",
-        "FR-VEN-6"
-      ]
-    },
-    {
-      "id": "TC-LOAN-13",
-      "module": "LOAN",
-      "level": "System",
-      "technique": "Combination",
-      "defect": "",
-      "scenario": "Two rules broken at once (combination)",
-      "pre": "-",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "In 'Micro-credit', enter the amount",
-        "Click 'Apply for loan'"
-      ],
-      "input": "(a) Sunita, score 20, Amount = 20000 (low score + above limit); (b) Ramesh with application #1 PENDING, Amount = 20000 (active loan + above limit)",
-      "expected": "Low score + above limit: Trust score 20 is below 40. Not eligible | Active loan + above limit: You already have an active loan",
-      "actual": "Low score + above limit: Trust score 20 is below 40. Not eligible | Active loan + above limit: You already have an active loan",
-      "remark": "PASS",
-      "reqs": [
-        "FR-LN-4",
-        "FR-LN-5",
-        "FR-TS-5"
-      ]
-    },
-    {
-      "id": "TC-LOAN-14",
-      "module": "LOAN",
-      "level": "System",
-      "technique": "Negative",
-      "defect": "",
-      "scenario": "Review an application that is already approved",
-      "pre": "Ramesh's application #1 is APPROVED",
-      "steps": [
-        "Log in as bank officer (9123456780 / bank123)",
-        "Send a Reject request for application #1"
-      ],
-      "input": "Decision = Reject, Remarks = Changed my mind",
-      "expected": "Only PENDING applications can be reviewed",
-      "actual": "Only PENDING applications can be reviewed",
-      "remark": "PASS",
-      "reqs": [
-        "FR-BNK-2"
-      ]
-    },
-    {
-      "id": "TC-LOAN-15",
-      "module": "LOAN",
-      "level": "System",
-      "technique": "Negative",
-      "defect": "",
-      "scenario": "Disburse an application that is still pending",
-      "pre": "Ramesh's application #1 is PENDING",
-      "steps": [
-        "Log in as bank officer (9123456780 / bank123)",
-        "Send a Disburse request for application #1"
-      ],
-      "input": "POST /officer/loan/1/disburse",
-      "expected": "Only APPROVED loans can be disbursed",
-      "actual": "Only APPROVED loans can be disbursed",
-      "remark": "PASS",
-      "reqs": [
-        "FR-BNK-5"
-      ]
-    },
-    {
-      "id": "TC-LOAN-16",
-      "module": "LOAN",
-      "level": "System",
-      "technique": "Security",
-      "defect": "",
-      "scenario": "Forged decision value",
-      "pre": "Ramesh's application #1 is PENDING",
-      "steps": [
-        "Log in as bank officer (9123456780 / bank123)",
-        "Send the review form with a decision that is not offered"
-      ],
-      "input": "Decision = DELETE, Remarks = x",
-      "expected": "Decision must be APPROVE or REJECT",
-      "actual": "Decision must be APPROVE or REJECT",
-      "remark": "PASS",
-      "reqs": [
-        "FR-BNK-2"
-      ]
-    },
-    {
-      "id": "TC-LOAN-17",
-      "module": "LOAN",
-      "level": "System",
-      "technique": "Negative",
-      "defect": "",
-      "scenario": "Review a loan that does not exist",
-      "pre": "Only application #1 exists",
-      "steps": [
-        "Log in as bank officer (9123456780 / bank123)",
-        "Send an Approve request for application #99"
-      ],
-      "input": "POST /officer/loan/99/review, Approve",
-      "expected": "Loan not found",
-      "actual": "Loan not found",
-      "remark": "PASS",
-      "reqs": [
-        "FR-BNK-2"
-      ]
-    },
-    {
-      "id": "TC-LOAN-18",
-      "module": "LOAN",
-      "level": "System",
-      "technique": "Positive",
-      "defect": "",
-      "scenario": "Withdraw a pending application, then apply again",
-      "pre": "Ramesh's application #1 for Rs 15,000 is PENDING",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Click 'Withdraw' on application #1",
-        "Apply for Rs 12,000"
-      ],
-      "input": "Withdraw #1; then Amount = 12000",
-      "expected": "Application #1 withdrawn. | Loan application #2 submitted. Status: PENDING.",
-      "actual": "Application #1 withdrawn. | Loan application #2 submitted. Status: PENDING.",
-      "remark": "PASS",
-      "reqs": [
-        "FR-LN-5",
-        "FR-LN-6"
-      ]
-    },
-    {
-      "id": "TC-LOAN-19",
-      "module": "LOAN",
-      "level": "System",
-      "technique": "Positive",
-      "defect": "",
-      "scenario": "Reject with remarks; vendor sees them and can re-apply",
-      "pre": "Ramesh's application #1 is PENDING",
-      "steps": [
-        "Log in as bank officer (9123456780 / bank123)",
-        "Enter remarks and click 'Reject' on #1",
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Open loan #1",
-        "Apply for Rs 15,000 again"
-      ],
-      "input": "Remarks = Sales record too short; then Amount = 15000",
-      "expected": "Loan #1 REJECTED. | Vendor's loan page shows remarks: Sales record too short | Loan application #2 submitted. Status: PENDING.",
-      "actual": "Loan #1 REJECTED. | Vendor's loan page shows remarks: Sales record too short | Loan application #2 submitted. Status: PENDING.",
-      "remark": "PASS",
-      "reqs": [
+        "FR-BNK-2",
         "FR-BNK-3",
+        "FR-LN-5",
+        "FR-LN-6",
         "BR-5"
-      ]
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "Leave Remarks empty and click 'Reject' on #1",
+          "data": "Decision = Reject, Remarks = (empty)",
+          "expected": "Remarks are required when rejecting",
+          "actual": "Remarks are required when rejecting",
+          "result": "PASS",
+          "note": "Negative - remarks required",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Send the review form with a decision that is not offered",
+          "data": "Decision = DELETE, Remarks = x",
+          "expected": "Decision must be APPROVE or REJECT",
+          "actual": "Decision must be APPROVE or REJECT",
+          "result": "PASS",
+          "note": "Security - forged value",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Send an Approve request for application #99",
+          "data": "Loan #99 (does not exist)",
+          "expected": "Loan not found",
+          "actual": "Loan not found",
+          "result": "PASS",
+          "note": "Negative - unknown loan",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "Enter remarks and click 'Reject' on #1",
+          "data": "Decision = Reject, Remarks = Sales record too short",
+          "expected": "Loan #1 REJECTED.",
+          "actual": "Loan #1 REJECTED.",
+          "result": "PASS",
+          "note": "Positive",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Log in as Ramesh and open loan #1",
+          "data": "9876543210 / ramesh123",
+          "expected": "Loan #1 page is shown; Officer remarks: Sales record too short",
+          "actual": "Loan #1 page is shown; Officer remarks: Sales record too short",
+          "result": "PASS",
+          "note": "Remarks shown to the vendor",
+          "defect": ""
+        },
+        {
+          "no": 6,
+          "action": "In 'Micro-credit' enter the amount and click 'Apply for loan'",
+          "data": "Amount = 12000",
+          "expected": "Loan application #2 submitted. Status: PENDING.",
+          "actual": "Loan application #2 submitted. Status: PENDING.",
+          "result": "PASS",
+          "note": "Positive - may re-apply after rejection",
+          "defect": ""
+        },
+        {
+          "no": 7,
+          "action": "Click 'Withdraw' on application #2",
+          "data": "Loan #2",
+          "expected": "Application #2 withdrawn.",
+          "actual": "Application #2 withdrawn.",
+          "result": "PASS",
+          "note": "Positive",
+          "defect": ""
+        },
+        {
+          "no": 8,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "Loan #1 REJECTED (remarks: Sales record too short); Loan #2 WITHDRAWN",
+          "actual": "Loan #1 REJECTED (remarks: Sales record too short); Loan #2 WITHDRAWN",
+          "result": "PASS",
+          "note": "",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
-      "id": "TC-LOAN-20",
+      "id": "TC-LOAN-06",
       "module": "LOAN",
+      "name": "Access control on officer and loan pages",
       "level": "System",
-      "technique": "Security",
-      "defect": "DEF-05",
-      "scenario": "Customer / municipal officer opens a vendor's loan page",
-      "pre": "Ramesh's application #1 exists",
-      "steps": [
-        "Log in as customer Priya (9988776655 / priya123) or municipal officer (9090909090 / muni123)",
-        "Type /loan/1 in the browser"
+      "description": "Test that each role can open only the pages allowed to it.",
+      "pre": [
+        "Ramesh's application #1 exists",
+        "Registered: Sunita Devi (vendor, 9812345670 / sunita123), Priya Mehta (customer, 9988776655 / priya123), R K Verma (municipal officer, 9090909090 / muni123), Anil Sharma (bank officer, 9123456780 / bank123)"
       ],
-      "input": "URL = /loan/1",
-      "expected": "Customer: You are not allowed to open that page. | Municipal officer: You are not allowed to open that page.",
-      "actual": "Customer: (no message) [POST-CONDITION FAILED: Ramesh's loan #1 page is shown] | Municipal officer: (no message) [POST-CONDITION FAILED: Ramesh's loan #1 page is shown]",
-      "remark": "FAIL",
+      "post": [
+        "Loan data is visible only to its vendor and to bank officers; nothing is changed"
+      ],
       "reqs": [
         "FR-AUTH-7",
-        "NFR-SEC-7"
-      ]
-    },
-    {
-      "id": "TC-LOAN-21",
-      "module": "LOAN",
-      "level": "System",
-      "technique": "Security",
-      "defect": "",
-      "scenario": "Vendor opens another vendor's loan page",
-      "pre": "Ramesh's application #1 exists",
-      "steps": [
-        "Log in as Sunita (9812345670 / sunita123)",
-        "Type /loan/1 in the browser"
+        "FR-BNK-4",
+        "NFR-SEC-7",
+        "BR-1"
       ],
-      "input": "URL = /loan/1",
-      "expected": "You can only view your own loans.",
-      "actual": "You can only view your own loans.",
-      "remark": "PASS",
-      "reqs": [
-        "FR-AUTH-7",
-        "NFR-SEC-7"
-      ]
+      "steps": [
+        {
+          "no": 1,
+          "action": "Log in as Ramesh; type /officer in the browser",
+          "data": "URL = /officer",
+          "expected": "You are not allowed to open that page.",
+          "actual": "You are not allowed to open that page.",
+          "result": "PASS",
+          "note": "Security - vendor on officer page",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Log in as Priya (customer); type /loan/1",
+          "data": "URL = /loan/1",
+          "expected": "You are not allowed to open that page.",
+          "actual": "Loan #1 page is shown",
+          "result": "FAIL",
+          "note": "Security - customer",
+          "defect": "DEF-05"
+        },
+        {
+          "no": 3,
+          "action": "Log in as R K Verma (municipal officer); type /loan/1",
+          "data": "URL = /loan/1",
+          "expected": "You are not allowed to open that page.",
+          "actual": "Loan #1 page is shown",
+          "result": "FAIL",
+          "note": "Security - municipal officer",
+          "defect": "DEF-05"
+        },
+        {
+          "no": 4,
+          "action": "Log in as Sunita (another vendor); type /loan/1",
+          "data": "URL = /loan/1",
+          "expected": "You can only view your own loans.",
+          "actual": "You can only view your own loans.",
+          "result": "PASS",
+          "note": "Security - other vendor",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Log in as Anil (bank officer); open /loan/1",
+          "data": "URL = /loan/1",
+          "expected": "Loan #1 page is shown",
+          "actual": "Loan #1 page is shown",
+          "result": "PASS",
+          "note": "Positive - bank officer",
+          "defect": ""
+        },
+        {
+          "no": 6,
+          "action": "Log in as Ramesh; open /loan/1",
+          "data": "URL = /loan/1",
+          "expected": "Loan #1 page is shown",
+          "actual": "Loan #1 page is shown",
+          "result": "PASS",
+          "note": "Positive - owner",
+          "defect": ""
+        }
+      ],
+      "result": "FAIL"
     },
     {
       "id": "TC-EMI-01",
       "module": "EMI",
+      "name": "View the EMI schedule",
       "level": "System",
-      "technique": "Positive",
-      "defect": "",
-      "scenario": "View the EMI schedule",
-      "pre": "-",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Click 'View' on loan #1",
-        "Read the EMI schedule table"
+      "description": "Test the generated reducing-balance EMI schedule against a hand calculation.",
+      "pre": [
+        "Vendor Ramesh Kumar (9876543210 / ramesh123) is registered and logged in",
+        "His Tier-1 loan #1 of Rs 15,000 at 12% p.a. for 12 months was approved and disbursed today (04-11-2026) by bank officer Anil Sharma",
+        "Hand calculation: r = 12% / 12 = 0.01; EMI = 15000 x 0.01 x 1.01^12 / (1.01^12 - 1) = Rs 1,332.73"
       ],
-      "input": "Loan #1: P = 15000, r = 12% p.a., n = 12, disbursed 04-11-2026",
-      "expected": "12 installments; EMI #1 Rs 1,332.73 due 2026-12-04; EMI #12 due 2027-11-04",
-      "actual": "12 installments; EMI #1 Rs 1,332.73 due 2026-12-04; EMI #12 due 2027-11-04",
-      "remark": "PASS",
+      "post": [
+        "The schedule is displayed; nothing is changed"
+      ],
       "reqs": [
         "FR-BNK-6",
         "FR-EMI-1"
-      ]
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "Read the 'Next EMI' card on the dashboard",
+          "data": "-",
+          "expected": "Next EMI Rs 1,332.73 due 2026-12-04",
+          "actual": "Next EMI Rs 1,332.73 due 2026-12-04",
+          "result": "PASS",
+          "note": "Positive",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Click 'View' on loan #1 and read the EMI schedule",
+          "data": "Loan #1",
+          "expected": "12 installments; EMI #1 Rs 1,332.73 due 2026-12-04; EMI #12 due 2027-11-04",
+          "actual": "12 installments; EMI #1 Rs 1,332.73 due 2026-12-04; EMI #12 due 2027-11-04",
+          "result": "PASS",
+          "note": "Monthly due dates",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Read the principal / interest split of EMI #1",
+          "data": "-",
+          "expected": "EMI #1 = Principal Rs 1,182.73 + Interest Rs 150.00",
+          "actual": "EMI #1 = Principal Rs 1,182.73 + Interest Rs 150.00",
+          "result": "PASS",
+          "note": "Interest = 15000 x 0.01 = 150",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "Read the split of EMI #2",
+          "data": "-",
+          "expected": "EMI #2 = Principal Rs 1,194.56 + Interest Rs 138.17",
+          "actual": "EMI #2 = Principal Rs 1,194.56 + Interest Rs 138.17",
+          "result": "PASS",
+          "note": "Interest = 13817.27 x 0.01 (reducing balance)",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Read the summary cards on the loan page",
+          "data": "-",
+          "expected": "Rs 15,000, Tier 1; 12 months @ 12.0% p.a.; EMIs paid 0/12",
+          "actual": "Rs 15,000, Tier 1; 12 months @ 12.0% p.a.; EMIs paid 0/12",
+          "result": "PASS",
+          "note": "Positive",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
       "id": "TC-EMI-02",
       "module": "EMI",
+      "name": "Pay EMIs in order",
       "level": "System",
-      "technique": "Positive",
-      "defect": "",
-      "scenario": "Pay EMI #1 before its due date",
-      "pre": "No EMI paid yet",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Open loan #1",
-        "Click 'Pay' on installment #1 (amount pre-filled)"
+      "description": "Test paying EMIs, and that an installment cannot be paid twice or out of order.",
+      "pre": [
+        "Vendor Ramesh Kumar (9876543210 / ramesh123) is registered and logged in",
+        "His Tier-1 loan #1 of Rs 15,000 at 12% p.a. for 12 months was approved and disbursed today (04-11-2026) by bank officer Anil Sharma",
+        "Hand calculation: r = 12% / 12 = 0.01; EMI = 15000 x 0.01 x 1.01^12 / (1.01^12 - 1) = Rs 1,332.73",
+        "No EMI has been paid"
       ],
-      "input": "Installment = 1, Amount = 1332.73, paid on 04-11-2026",
-      "expected": "EMI #1 paid on time.",
-      "actual": "EMI #1 paid on time.",
-      "remark": "PASS",
+      "post": [
+        "EMIs #1 and #2 are PAID (on time); the other 10 are still DUE"
+      ],
       "reqs": [
+        "FR-EMI-2",
+        "FR-EMI-4",
         "FR-EMI-5"
-      ]
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "On loan #1 enter the amount and click 'Pay' on the installment",
+          "data": "Installment #1, Amount = 1332.73",
+          "expected": "EMI #1 paid on time.",
+          "actual": "EMI #1 paid on time.",
+          "result": "PASS",
+          "note": "Positive (happy path)",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Send a payment request for #1 again",
+          "data": "Installment #1, Amount = 1332.73",
+          "expected": "Installment already paid",
+          "actual": "Installment already paid",
+          "result": "PASS",
+          "note": "Security - forged request",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Send a payment request for #3 (the page offers only #2)",
+          "data": "Installment #3, Amount = 1332.73",
+          "expected": "Pay earlier installment #2 first",
+          "actual": "Pay earlier installment #2 first",
+          "result": "PASS",
+          "note": "Security - out of order",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "On loan #1 enter the amount and click 'Pay' on the installment",
+          "data": "Installment #2, Amount = 1332.73",
+          "expected": "EMI #2 paid on time.",
+          "actual": "EMI #2 paid on time.",
+          "result": "PASS",
+          "note": "Positive",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "EMI #1 PAID on time, EMI #2 PAID on time; 10 DUE",
+          "actual": "EMI #1 PAID on time, EMI #2 PAID on time; 10 DUE",
+          "result": "PASS",
+          "note": "",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
       "id": "TC-EMI-03",
       "module": "EMI",
+      "name": "Payment amount - invalid values",
       "level": "System",
-      "technique": "Negative",
-      "defect": "",
-      "scenario": "Pay less than the EMI amount",
-      "pre": "No EMI paid yet",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Open loan #1",
-        "Change the amount to 1000",
-        "Click 'Pay' on installment #1"
+      "description": "Test that a payment less than the EMI, or one that is not a number, is rejected.",
+      "pre": [
+        "Vendor Ramesh Kumar (9876543210 / ramesh123) is registered and logged in",
+        "His Tier-1 loan #1 of Rs 15,000 at 12% p.a. for 12 months was approved and disbursed today (04-11-2026) by bank officer Anil Sharma",
+        "Hand calculation: r = 12% / 12 = 0.01; EMI = 15000 x 0.01 x 1.01^12 / (1.01^12 - 1) = Rs 1,332.73",
+        "No EMI has been paid; every step pays installment #1"
       ],
-      "input": "Installment = 1, Amount = 1000",
-      "expected": "Amount is less than EMI due of Rs 1332.73",
-      "actual": "Amount is less than EMI due of Rs 1332.73",
-      "remark": "PASS",
+      "post": [
+        "No installment is marked PAID"
+      ],
       "reqs": [
         "FR-EMI-3"
-      ]
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "On loan #1 enter the amount and click 'Pay' on the installment",
+          "data": "Amount = 1332.72 (1 paisa less)",
+          "expected": "Amount is less than EMI due of Rs 1332.73",
+          "actual": "Amount is less than EMI due of Rs 1332.73",
+          "result": "PASS",
+          "note": "BVA - just below the EMI",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "On loan #1 enter the amount and click 'Pay' on the installment",
+          "data": "Amount = 0",
+          "expected": "Amount is less than EMI due of Rs 1332.73",
+          "actual": "Amount is less than EMI due of Rs 1332.73",
+          "result": "PASS",
+          "note": "BVA - zero",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "On loan #1 enter the amount and click 'Pay' on the installment",
+          "data": "Amount = abc",
+          "expected": "Payment amount must be a number",
+          "actual": "Payment amount must be a number",
+          "result": "PASS",
+          "note": "Negative (EP) - text",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "On loan #1 enter the amount and click 'Pay' on the installment",
+          "data": "Amount = (empty)",
+          "expected": "Payment amount must be a number",
+          "actual": "Payment amount must be a number",
+          "result": "PASS",
+          "note": "Negative (EP) - empty",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "On loan #1 enter the amount and click 'Pay' on the installment",
+          "data": "Amount = nan",
+          "expected": "Payment amount must be a number",
+          "actual": "EMI #1 paid on time.",
+          "result": "FAIL",
+          "note": "Negative (EP) - special value",
+          "defect": "DEF-03"
+        },
+        {
+          "no": 6,
+          "action": "On loan #1 enter the amount and click 'Pay' on the installment",
+          "data": "Amount = inf",
+          "expected": "Payment amount must be a number",
+          "actual": "Installment already paid",
+          "result": "FAIL",
+          "note": "Negative (EP) - special value",
+          "defect": "DEF-03"
+        },
+        {
+          "no": 7,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "0 installments PAID; 12 DUE",
+          "actual": "EMI #1 PAID on time; 11 DUE",
+          "result": "FAIL",
+          "note": "",
+          "defect": ""
+        }
+      ],
+      "result": "FAIL"
     },
     {
       "id": "TC-EMI-04",
       "module": "EMI",
+      "name": "Full repayment raises the score and unlocks Tier 2",
       "level": "System",
-      "technique": "Security",
-      "defect": "",
-      "scenario": "Skip an installment (forged request)",
-      "pre": "EMI #1 is paid; #2 is due",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Pay EMI #1",
-        "Send a payment request for installment #3 directly (the page only offers #2)"
+      "description": "Test that on-time payments raise the Trust Score and that paying the last EMI closes the loan and unlocks the next tier (progressive lending).",
+      "pre": [
+        "Vendor Ramesh Kumar (9876543210 / ramesh123) is registered and logged in",
+        "His Tier-1 loan #1 of Rs 15,000 at 12% p.a. for 12 months was approved and disbursed today (04-11-2026) by bank officer Anil Sharma",
+        "Hand calculation: r = 12% / 12 = 0.01; EMI = 15000 x 0.01 x 1.01^12 / (1.01^12 - 1) = Rs 1,332.73",
+        "No EMI has been paid; Ramesh's Trust Score is 70"
       ],
-      "input": "POST /vendor/loan/1/pay/3, Amount = 1332.73",
-      "expected": "Pay earlier installment #2 first",
-      "actual": "Pay earlier installment #2 first",
-      "remark": "PASS",
+      "post": [
+        "Loan #1 is CLOSED, all 12 EMIs are PAID and Ramesh can now borrow up to Rs 25,000"
+      ],
       "reqs": [
-        "FR-EMI-2"
-      ]
+        "FR-EMI-5",
+        "FR-EMI-6",
+        "FR-LN-3",
+        "FR-TS-2"
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "Read the Trust Score card",
+          "data": "-",
+          "expected": "Trust Score 70/100, LOW RISK",
+          "actual": "Trust Score 70/100, LOW RISK",
+          "result": "PASS",
+          "note": "No EMI due yet: repayment = 20",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "On loan #1 enter the amount and click 'Pay' on the installment; then read the Trust Score",
+          "data": "Installment #1, Amount = 1332.73",
+          "expected": "EMI #1 paid on time. -> Trust Score 90/100, LOW RISK",
+          "actual": "EMI #1 paid on time. -> Trust Score 90/100, LOW RISK",
+          "result": "PASS",
+          "note": "1 of 1 on time: repayment = 40",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Pay installments #2 to #12 in order, each with the amount shown",
+          "data": "11 payments",
+          "expected": "EMI #12 paid on time. Loan fully repaid - you are now eligible for the next tier!",
+          "actual": "EMI #12 paid on time. Loan fully repaid - you are now eligible for the next tier!",
+          "result": "PASS",
+          "note": "Positive",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "Open the dashboard and read the eligible-limit card",
+          "data": "-",
+          "expected": "Eligible limit Rs 25,000 (Tier 2)",
+          "actual": "Eligible limit Rs 25,000 (Tier 2)",
+          "result": "PASS",
+          "note": "Next tier unlocked",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "Loan #1 CLOSED; 12 of 12 EMIs PAID",
+          "actual": "Loan #1 CLOSED; 12 of 12 EMIs PAID",
+          "result": "PASS",
+          "note": "",
+          "defect": ""
+        }
+      ],
+      "result": "PASS"
     },
     {
       "id": "TC-EMI-05",
       "module": "EMI",
+      "name": "Invalid payment requests",
       "level": "System",
-      "technique": "Security",
-      "defect": "",
-      "scenario": "Pay the same installment twice (forged request)",
-      "pre": "EMI #1 is already paid",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Pay EMI #1",
-        "Send a payment request for installment #1 again"
+      "description": "Test forged payment requests: unknown installment or loan, someone else's loan, a loan not disbursed.",
+      "pre": [
+        "Vendor Ramesh Kumar (9876543210 / ramesh123) is registered and logged in",
+        "His Tier-1 loan #1 of Rs 15,000 at 12% p.a. for 12 months was approved and disbursed today (04-11-2026) by bank officer Anil Sharma",
+        "Hand calculation: r = 12% / 12 = 0.01; EMI = 15000 x 0.01 x 1.01^12 / (1.01^12 - 1) = Rs 1,332.73",
+        "Sunita Devi (9812345670 / sunita123) is a registered vendor",
+        "Mohd. Salim (9811122233 / salim123) has loan #2 APPROVED but not yet disbursed"
       ],
-      "input": "POST /vendor/loan/1/pay/1, Amount = 1332.73",
-      "expected": "Installment already paid",
-      "actual": "Installment already paid",
-      "remark": "PASS",
+      "post": [
+        "No installment is marked PAID"
+      ],
       "reqs": [
-        "FR-EMI-4"
-      ]
+        "FR-EMI-1",
+        "FR-BNK-5",
+        "NFR-SEC-7"
+      ],
+      "steps": [
+        {
+          "no": 1,
+          "action": "Send a payment request for installment #13",
+          "data": "Loan #1, Installment #13, Amount = 1332.73",
+          "expected": "Installment not found",
+          "actual": "Installment not found",
+          "result": "PASS",
+          "note": "Security - no such installment",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "Send a payment request for installment #0",
+          "data": "Loan #1, Installment #0, Amount = 1332.73",
+          "expected": "Installment not found",
+          "actual": "Installment not found",
+          "result": "PASS",
+          "note": "BVA - below #1",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Send a payment request for loan #99",
+          "data": "Loan #99, Installment #1, Amount = 1332.73",
+          "expected": "Loan not found",
+          "actual": "Loan not found | Loan not found",
+          "result": "FAIL",
+          "note": "Negative - unknown loan",
+          "defect": "DEF-06"
+        },
+        {
+          "no": 4,
+          "action": "Log in as Sunita; send a payment for Ramesh's loan #1",
+          "data": "Loan #1, Installment #1",
+          "expected": "You can only pay your own loans",
+          "actual": "You can only pay your own loans | You can only view your own loans.",
+          "result": "FAIL",
+          "note": "Security - someone else's loan",
+          "defect": "DEF-06"
+        },
+        {
+          "no": 5,
+          "action": "Log in as Salim; send a payment for his loan #2",
+          "data": "Loan #2, Installment #1",
+          "expected": "Loan is not active for repayment",
+          "actual": "Loan is not active for repayment",
+          "result": "PASS",
+          "note": "Negative - loan not disbursed",
+          "defect": ""
+        },
+        {
+          "no": 6,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "0 installments PAID; 12 DUE",
+          "actual": "0 installments PAID; 12 DUE",
+          "result": "PASS",
+          "note": "",
+          "defect": ""
+        }
+      ],
+      "result": "FAIL"
     },
     {
       "id": "TC-EMI-06",
       "module": "EMI",
+      "name": "Late payment and default check (90 / 91 days overdue)",
       "level": "System",
-      "technique": "Positive",
-      "defect": "",
-      "scenario": "Repay all 12 EMIs (progressive lending)",
-      "pre": "No EMI paid yet",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Pay installments 1 to 12 in order",
-        "Open the dashboard"
+      "description": "Test that a loan becomes DEFAULTED only when an EMI is MORE than 90 days overdue, that it can still be repaid, and that a late payment lowers the Trust Score.",
+      "pre": [
+        "Vendor Ramesh Kumar (9876543210 / ramesh123) is registered",
+        "His loan #1 (Rs 15,000) is DISBURSED and no EMI is paid",
+        "EMI #1's due date is 06-08-2026 (exactly 90 days ago)",
+        "Bank officer Anil Sharma (9123456780 / bank123) is logged in"
       ],
-      "input": "12 payments, each equal to the EMI shown",
-      "expected": "EMI #12 paid on time. Loan fully repaid - you are now eligible for the next tier! -> Dashboard shows eligible limit Rs 25,000 (Tier 2)",
-      "actual": "EMI #12 paid on time. Loan fully repaid - you are now eligible for the next tier! -> Dashboard shows eligible limit Rs 25,000 (Tier 2)",
-      "remark": "PASS",
-      "reqs": [
-        "FR-EMI-6",
-        "FR-LN-3"
-      ]
-    },
-    {
-      "id": "TC-EMI-07",
-      "module": "EMI",
-      "level": "System",
-      "technique": "Positive",
-      "defect": "",
-      "scenario": "Default check marks a 90+ days overdue loan",
-      "pre": "Loan #1 was disbursed on 07-06-2026 (150 days ago) and no EMI has been paid",
-      "steps": [
-        "Log in as bank officer (9123456780 / bank123)",
-        "Click 'Run default check (90+ days overdue)'"
+      "post": [
+        "Loan #1 is DEFAULTED; EMI #1 is PAID (late)"
       ],
-      "input": "(button click, no data)",
-      "expected": "Default check complete: 1 loan(s) marked DEFAULTED.",
-      "actual": "Default check complete: 1 loan(s) marked DEFAULTED.",
-      "remark": "PASS",
       "reqs": [
         "FR-BNK-7",
-        "BR-6"
-      ]
-    },
-    {
-      "id": "TC-EMI-08",
-      "module": "EMI",
-      "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "DEF-03",
-      "scenario": "Special float values as the payment",
-      "pre": "No EMI paid yet",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Open loan #1",
-        "Enter the amount for the installment",
-        "Click 'Pay'"
-      ],
-      "input": "Installment = 1, Amount = nan; then Amount = inf",
-      "expected": "nan: Payment amount must be a number | inf: Payment amount must be a number",
-      "actual": "nan: EMI #1 paid on time. | inf: EMI #1 paid on time.",
-      "remark": "FAIL",
-      "reqs": [
-        "FR-EMI-3"
-      ]
-    },
-    {
-      "id": "TC-EMI-09",
-      "module": "EMI",
-      "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "",
-      "scenario": "Non-numeric / empty payment",
-      "pre": "No EMI paid yet",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Open loan #1",
-        "Enter the amount for the installment",
-        "Click 'Pay'"
-      ],
-      "input": "Installment = 1, Amount = abc; then Amount = (empty)",
-      "expected": "abc: Payment amount must be a number | Empty: Payment amount must be a number",
-      "actual": "abc: Payment amount must be a number | Empty: Payment amount must be a number",
-      "remark": "PASS",
-      "reqs": [
-        "FR-EMI-3"
-      ]
-    },
-    {
-      "id": "TC-EMI-10",
-      "module": "EMI",
-      "level": "System",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Boundary value - 1 paisa less than the EMI / exact EMI",
-      "pre": "No EMI paid yet",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Open loan #1",
-        "Enter the amount for the installment",
-        "Click 'Pay'"
-      ],
-      "input": "Installment = 1, Amount = 1332.72; then Amount = 1332.73 (fresh database each time)",
-      "expected": "1332.72: Amount is less than EMI due of Rs 1332.73 | 1332.73: EMI #1 paid on time.",
-      "actual": "1332.72: Amount is less than EMI due of Rs 1332.73 | 1332.73: EMI #1 paid on time.",
-      "remark": "PASS",
-      "reqs": [
-        "FR-EMI-3"
-      ]
-    },
-    {
-      "id": "TC-EMI-11",
-      "module": "EMI",
-      "level": "System",
-      "technique": "Negative (EP)",
-      "defect": "",
-      "scenario": "Zero / negative payment",
-      "pre": "No EMI paid yet",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Open loan #1",
-        "Enter the amount for the installment",
-        "Click 'Pay'"
-      ],
-      "input": "Installment = 1, Amount = 0; then Amount = -1332.73",
-      "expected": "0: Amount is less than EMI due of Rs 1332.73 | -1332.73: Amount is less than EMI due of Rs 1332.73",
-      "actual": "0: Amount is less than EMI due of Rs 1332.73 | -1332.73: Amount is less than EMI due of Rs 1332.73",
-      "remark": "PASS",
-      "reqs": [
-        "FR-EMI-3"
-      ]
-    },
-    {
-      "id": "TC-EMI-12",
-      "module": "EMI",
-      "level": "System",
-      "technique": "Positive",
-      "defect": "",
-      "scenario": "Pay an EMI after its due date",
-      "pre": "Loan #1 was disbursed on 25-09-2026 (40 days ago), so EMI #1 is overdue",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Open loan #1",
-        "Enter the amount for the installment",
-        "Click 'Pay'",
-        "Open the dashboard"
-      ],
-      "input": "Installment = 1, Amount = 1332.73, paid on 04-11-2026",
-      "expected": "EMI #1 paid late. -> Trust Score 50/100",
-      "actual": "EMI #1 paid late. -> Trust Score 50/100",
-      "remark": "PASS",
-      "reqs": [
+        "BR-6",
         "FR-EMI-5",
         "FR-TS-2"
-      ]
-    },
-    {
-      "id": "TC-EMI-13",
-      "module": "EMI",
-      "level": "System",
-      "technique": "Positive",
-      "defect": "",
-      "scenario": "Paying on time raises the Trust Score",
-      "pre": "No EMI paid yet; Trust Score 70",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Open loan #1",
-        "Enter the amount for the installment",
-        "Click 'Pay'",
-        "Open the dashboard"
       ],
-      "input": "Installment = 1, Amount = 1332.73",
-      "expected": "Before: 70/100 | After paying EMI #1 on time: 90/100",
-      "actual": "Before: 70/100 | After paying EMI #1 on time: 90/100",
-      "remark": "PASS",
-      "reqs": [
-        "FR-EMI-5",
-        "FR-TS-2"
-      ]
-    },
-    {
-      "id": "TC-EMI-14",
-      "module": "EMI",
-      "level": "System",
-      "technique": "Security",
-      "defect": "",
-      "scenario": "Installment number that does not exist (forged request)",
-      "pre": "No EMI paid yet",
       "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Send a payment request for installment #13, then #0"
+        {
+          "no": 1,
+          "action": "Click 'Run default check (90+ days overdue)'",
+          "data": "EMI #1 due 06-08-2026 (90 days overdue)",
+          "expected": "Default check complete: 0 loan(s) marked DEFAULTED.",
+          "actual": "Default check complete: 0 loan(s) marked DEFAULTED.",
+          "result": "PASS",
+          "note": "BVA - exactly 90 days: not defaulted",
+          "defect": ""
+        },
+        {
+          "no": 2,
+          "action": "One day later, click 'Run default check' again",
+          "data": "EMI #1 due 05-08-2026 (91 days overdue)",
+          "expected": "Default check complete: 1 loan(s) marked DEFAULTED.",
+          "actual": "Default check complete: 1 loan(s) marked DEFAULTED.",
+          "result": "PASS",
+          "note": "BVA - 91 days: defaulted",
+          "defect": ""
+        },
+        {
+          "no": 3,
+          "action": "Check post-condition 1",
+          "data": "-",
+          "expected": "Loan #1 DEFAULTED",
+          "actual": "Loan #1 DEFAULTED",
+          "result": "PASS",
+          "note": "",
+          "defect": ""
+        },
+        {
+          "no": 4,
+          "action": "Log in as Ramesh. On loan #1 enter the amount and click 'Pay' on the installment",
+          "data": "Installment #1, Amount = 1332.73",
+          "expected": "EMI #1 paid late.",
+          "actual": "EMI #1 paid late.",
+          "result": "PASS",
+          "note": "A defaulted loan can still be repaid",
+          "defect": ""
+        },
+        {
+          "no": 5,
+          "action": "Read the Trust Score card",
+          "data": "-",
+          "expected": "Trust Score 50/100, MEDIUM RISK",
+          "actual": "Trust Score 50/100, MEDIUM RISK",
+          "result": "PASS",
+          "note": "0 of 1 on time: repayment = 0; 40 + 0 + 0 + 10",
+          "defect": ""
+        }
       ],
-      "input": "POST /vendor/loan/1/pay/13 and /pay/0, Amount = 1332.73",
-      "expected": "#13: Installment not found | #0: Installment not found",
-      "actual": "#13: Installment not found | #0: Installment not found",
-      "remark": "PASS",
-      "reqs": [
-        "FR-EMI-1"
-      ]
-    },
-    {
-      "id": "TC-EMI-15",
-      "module": "EMI",
-      "level": "System",
-      "technique": "Security",
-      "defect": "DEF-06",
-      "scenario": "Vendor pays another vendor's EMI (forged request)",
-      "pre": "Vendor 'Sunita Devi' (9812345670 / sunita123) has a profile with 0 years of vending and no sales",
-      "steps": [
-        "Log in as Sunita (9812345670 / sunita123)",
-        "Send a payment request for Ramesh's loan #1"
-      ],
-      "input": "POST /vendor/loan/1/pay/1, Amount = 1332.73",
-      "expected": "You can only pay your own loans",
-      "actual": "You can only pay your own loans | You can only view your own loans.",
-      "remark": "FAIL",
-      "reqs": [
-        "FR-AUTH-7",
-        "NFR-SEC-7"
-      ]
-    },
-    {
-      "id": "TC-EMI-16",
-      "module": "EMI",
-      "level": "System",
-      "technique": "Negative",
-      "defect": "DEF-06",
-      "scenario": "Pay an EMI of a loan that does not exist",
-      "pre": "Only loan #1 exists",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Send a payment request for loan #99"
-      ],
-      "input": "POST /vendor/loan/99/pay/1, Amount = 1332.73",
-      "expected": "Loan not found",
-      "actual": "Loan not found | Loan not found",
-      "remark": "FAIL",
-      "reqs": [
-        "FR-EMI-1"
-      ]
-    },
-    {
-      "id": "TC-EMI-17",
-      "module": "EMI",
-      "level": "System",
-      "technique": "Negative",
-      "defect": "",
-      "scenario": "Pay an EMI of an approved but not disbursed loan",
-      "pre": "Ramesh's loan #1 is APPROVED (not disbursed)",
-      "steps": [
-        "Log in as Ramesh (9876543210 / ramesh123)",
-        "Send a payment request for loan #1"
-      ],
-      "input": "POST /vendor/loan/1/pay/1, Amount = 1332.73",
-      "expected": "Loan is not active for repayment",
-      "actual": "Loan is not active for repayment",
-      "remark": "PASS",
-      "reqs": [
-        "FR-EMI-1",
-        "FR-BNK-5"
-      ]
-    },
-    {
-      "id": "TC-EMI-18",
-      "module": "EMI",
-      "level": "System",
-      "technique": "BVA",
-      "defect": "",
-      "scenario": "Boundary value - EMI overdue 90 / 91 days",
-      "pre": "Loan #1 is DISBURSED, no EMI paid",
-      "steps": [
-        "Log in as bank officer (9123456780 / bank123)",
-        "Click 'Run default check (90+ days overdue)'"
-      ],
-      "input": "EMI #1 due date set to 90 days ago; then to 91 days ago (fresh database each time)",
-      "expected": "90 days: Default check complete: 0 loan(s) marked DEFAULTED. | 91 days: Default check complete: 1 loan(s) marked DEFAULTED.",
-      "actual": "90 days: Default check complete: 0 loan(s) marked DEFAULTED. | 91 days: Default check complete: 1 loan(s) marked DEFAULTED.",
-      "remark": "PASS",
-      "reqs": [
-        "FR-BNK-7",
-        "BR-6"
-      ]
+      "result": "PASS"
     }
   ],
   "combinations": [

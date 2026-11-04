@@ -31,8 +31,9 @@ sys.path.insert(0, os.path.join(ROOT, "app"))
 from modules import credit_score, loan  # noqa: E402
 
 GREEN = RGBColor(0x1F, 0x5C, 0x3D)
-TEAM = "Nancy Yadav, <<Member 2>>, <<Member 3>>, <<Member 4>>"
-DATE = "28 October 2026"
+TEAM = "Nancy Yadav, Vishesh Gupta, Vishal Verma, Purva Joshi, Harshul Saini"
+FACULTY = "Dr. Harsh Taneja"
+DATE = "04 November 2026"
 
 doc = Document()
 
@@ -226,11 +227,11 @@ para("for", size=18, align=WD_ALIGN_PARAGRAPH.RIGHT)
 p = para("VendorSetu", size=28, bold=True, align=WD_ALIGN_PARAGRAPH.RIGHT, space_after=2)
 p.runs[0].font.color.rgb = GREEN
 para("Street Vendor Formalization & Micro-Credit Platform", size=15, align=WD_ALIGN_PARAGRAPH.RIGHT, space_after=30)
-para("Version 1.0 approved", size=13, bold=True, align=WD_ALIGN_PARAGRAPH.RIGHT, space_after=30)
+para("Version 1.1 approved", size=13, bold=True, align=WD_ALIGN_PARAGRAPH.RIGHT, space_after=30)
 para(f"Prepared by: {TEAM}", size=12, align=WD_ALIGN_PARAGRAPH.RIGHT)
 para("B.Tech CSE, Batch 2024 - CSE3005 Software Engineering", size=12, align=WD_ALIGN_PARAGRAPH.RIGHT)
 para("BML Munjal University", size=12, bold=True, align=WD_ALIGN_PARAGRAPH.RIGHT)
-para("Submitted to: <<Faculty name>>", size=12, align=WD_ALIGN_PARAGRAPH.RIGHT)
+para(f"Submitted to: {FACULTY}", size=12, align=WD_ALIGN_PARAGRAPH.RIGHT)
 para(DATE, size=12, align=WD_ALIGN_PARAGRAPH.RIGHT)
 page_break()
 
@@ -243,7 +244,10 @@ heading("Revision History", 1)
 table(["Name", "Date", "Reason For Changes", "Version"],
       [["Nancy Yadav & team", "28-10-2026",
         "Complete SRS for final evaluation: requirements, analysis models (UML & DFD), prototype implementation "
-        "of 4 modules and executed test cases", "1.0"]],
+        "of 4 modules and executed test cases", "1.0"],
+       ["Nancy Yadav & team", "04-11-2026",
+        "Test cases rewritten in the course Test Case Template (6 per module); 6 defects found by testing fixed; "
+        "FR-AUTH-1, FR-VEN-4, FR-VEN-5 and FR-LN-4 made more precise", "1.1"]],
       [1.5, 1.0, 3.0, 0.75])
 
 # ====================================================================== 1 Introduction
@@ -879,9 +883,11 @@ code_block("""SE_Project/
       loan.py            Module 4 - loans, EMI schedule, repayment
     templates/, static/  HTML pages and stylesheet
   tests/
-    test_cases.py        documented test cases (Appendix E)
-    run_test_cases.py    executes cases, records actual output
-    test_vendorsetu.py   pytest wrapper for the same cases
+    test_cases.py        the 30 documented test cases (Appendix E)
+    run_test_cases.py    executes them, records every actual output
+    test_vendorsetu.py   pytest wrapper for the same test cases
+    combinations.py      combination testing of every form
+    test_combinations.py pytest wrapper for combination testing
     test_integration.py  end-to-end tests through the web routes
   diagrams/              diagram source (Python) + PNG output
   docs/                  this SRS and its generator""")
@@ -923,8 +929,9 @@ pytest_run = subprocess.run([sys.executable, "-m", "pytest", "tests", "-q"], cwd
 pytest_summary = [ln for ln in pytest_run.stdout.strip().splitlines() if "passed" in ln or "failed" in ln][-1]
 with open(os.path.join(ROOT, "tests", "test_results_before_fix.json"), encoding="utf-8") as f:
     before = json.load(f)
-failed1 = [r for r in before["results"] if r["remark"] == "FAIL"]
-run1 = {r["id"]: r["remark"] for r in before["results"]}
+failed1 = [r for r in before["results"] if r["result"] == "FAIL"]
+run1 = {r["id"]: r for r in before["results"]}
+n_steps = sum(len(r["steps"]) for r in results["results"])
 
 new_section(landscape=True, margin=0.7)
 heading("Appendix E: Test Cases and Results", 1)
@@ -932,11 +939,16 @@ heading("E.1 Test Strategy", 2)
 n_system = sum(r["level"] == "System" for r in results["results"])
 n_unit = sum(r["level"] == "Unit" for r in results["results"])
 for b in [
-    f"**System testing ({n_system} cases):** each case is performed through the web interface exactly as a user "
-    "would - fill a form, click a button - and the Expected / Actual Output is the message or value shown on the "
-    "page, so every case can be repeated by hand in the demo.",
-    f"**Unit testing ({n_unit} cases):** the Trust Score formula is tested directly; the Expected Output shows the "
-    "hand calculation (e.g. 40 + 20 + 10 + 10 = 80).",
+    f"**Format:** 6 test cases for each of the 5 tested modules ({len(results['results'])} test cases, {n_steps} "
+    "steps), written in the course Test Case Template (Doc T_01): header, pre-conditions, steps (Action, Input, "
+    "Expected System Response, Actual Output, Pass/Fail, Comment) and post-conditions. Like the template's "
+    "Example 2, each test case tests the happy path and its failure conditions; 'Check post-condition' steps "
+    "look inside the database.",
+    f"**System testing ({n_system} test cases):** every step is performed through the web interface exactly as a "
+    "user would - fill a form, click a button - and the Expected / Actual Output is the message or value shown on "
+    "the page, so every step can be repeated by hand in the demo.",
+    f"**Unit testing ({n_unit} test cases):** the Trust Score formula is tested directly; the Comment column shows "
+    "the hand calculation.",
     "**Design techniques:** positive testing; equivalence partitioning (every invalid class: empty, wrong format, "
     "non-numeric, nan / inf, out of range); boundary-value analysis on both sides of every limit (name 50 / 51, "
     "password 5 / 6, amount 1,00,000 / 1,00,000.01, date 90 / 91 days, score 39 / 40 and 69 / 70, tier limit "
@@ -948,7 +960,8 @@ for b in [
     "required by the SRS, with no crash and no invalid data stored.",
     f"**Defects found and fixed:** the first version of the code (commit 0ce1911) failed {len(failed1)} of these "
     f"test cases; {len(results['defects'])} defects (e.g. 'nan' as an amount crashed the app, customers could "
-    "open a vendor's loan page) were logged, fixed and re-tested - see E.8.",
+    "open a vendor's loan page) were logged, fixed and re-tested - see E.8. The Comment column marks every step "
+    "that failed in Run 1.",
     "**Integration testing:** two end-to-end scenarios (register → login → profile → sale → apply → approve → "
     "disburse → pay EMI; role-based access).",
     "**Test automation:** tests/run_test_cases.py executes every case on a fresh, empty database and copies the "
@@ -962,54 +975,94 @@ for b in [
 
 order = ["AUTH", "SALE", "TS", "LOAN", "EMI"]
 summary_rows = []
+executed_on = "-".join(reversed(results["executed_on"].split("-")))
+
+
+def keep_row(row):
+    el = OxmlElement("w:cantSplit")
+    el.set(qn("w:val"), "true")
+    row._tr.get_or_add_trPr().append(el)
+
+
 for i, key in enumerate(order, start=2):
     meta = results["modules"][key]
     rows = [r for r in results["results"] if r["module"] == key]
     page_break()
-    heading(f"E.{i} {meta['name']}", 2)
-    hdr = doc.add_table(rows=4, cols=4)
-    hdr.style = "Table Grid"
-    hdr.alignment = WD_TABLE_ALIGNMENT.CENTER
-    cells = [
-        ("Test Case #:", f"{rows[0]['id']} to {rows[-1]['id']}", "Test Case Name:", meta["name"]),
-        ("System:", "VendorSetu", "Subsystem:", meta["subsystem"]),
-        ("Designed by:", "Nancy Yadav & team", "Design Date:", "-".join(reversed(results["executed_on"].split("-")))),
-        ("Executed by:", "Nancy Yadav & team", "Execution Date:", "-".join(reversed(results["executed_on"].split("-")))),
-    ]
-    widths = [1.3, 3.5, 1.4, 3.9]
-    for r_i, values in enumerate(cells):
-        for c_i, v in enumerate(values):
-            cell = hdr.rows[r_i].cells[c_i]
-            cell.width = Inches(widths[c_i])
-            rich(cell.paragraphs[0], v, size=9.5, bold=c_i % 2 == 0)
-            if c_i % 2 == 0:
-                set_cell_bg(cell, "EEF3EF")
-    p = para(f"**Short Description:** {meta['description']}", size=10, space_after=2)
-    p.paragraph_format.space_before = Pt(6)
-    para("**Pre-conditions:** " + " ".join(meta["pre"]), size=10, space_after=6)
+    heading(f"E.{i} {meta['name']} ({rows[0]['id']} to {rows[-1]['id']})", 2)
+    for n_case, r in enumerate(rows):
+        if n_case:
+            gap = doc.add_paragraph()
+            gap.paragraph_format.space_after = Pt(4)
+        hdr = doc.add_table(rows=5, cols=6)
+        hdr.style = "Table Grid"
+        hdr.alignment = WD_TABLE_ALIGNMENT.CENTER
+        cells = [
+            ("Test Case #:", r["id"], "Test Case Name:", r["name"], "Page:", "1 of 1"),
+            ("System:", "VendorSetu", "Subsystem:", meta["subsystem"], "Type:", r["level"] + " test"),
+            ("Designed by:", "Nancy Yadav & team", "Design Date:", executed_on, "Requirements:", ", ".join(r["reqs"])),
+            ("Executed by:", "Nancy Yadav & team", "Execution Date:", executed_on, "Result:", r["result"]),
+            ("Short Description:", r["description"], "", "", "", ""),
+        ]
+        widths = [1.2, 2.0, 1.2, 3.25, 1.05, 1.55]
+        for r_i, values in enumerate(cells):
+            keep_row(hdr.rows[r_i])
+            for c_i, v in enumerate(values):
+                cell = hdr.rows[r_i].cells[c_i]
+                cell.width = Inches(widths[c_i])
+                rich(cell.paragraphs[0], v, size=8.5, bold=c_i % 2 == 0)
+                if c_i % 2 == 0 and v:
+                    set_cell_bg(cell, "EEF3EF")
+                cell.paragraphs[0].paragraph_format.keep_with_next = True
+        last = hdr.rows[4].cells
+        merged = last[1].merge(last[5])
+        for extra in merged.paragraphs[1:]:
+            extra._p.getparent().remove(extra._p)
+        merged.paragraphs[0].text = ""
+        rich(merged.paragraphs[0], r["description"], size=8.5)
+        set_cell_bg(hdr.rows[3].cells[5], "D9F0E1" if r["result"] == "PASS" else "F8D7D3")
+        p = para("**Pre-conditions:** " + "; ".join(r["pre"]), size=8.5, space_after=2)
+        p.paragraph_format.space_before = Pt(3)
+        p.paragraph_format.keep_with_next = True
 
-    t = table(["TC ID", "Test Scenario", "Type", "Input (Test Data)", "Expected Output", "Actual Output", "Remark"],
-              [[r["id"], r["scenario"] + ("" if r["pre"] == "-" else f"\nPre: {r['pre']}"),
-                f"{r['level']}\n{r['technique']}", r["input"], r["expected"], r["actual"],
-                r["remark"] + (f"\n(Run 1: FAIL, {r['defect']})" if run1.get(r["id"]) == "FAIL" else "")]
-               for r in rows],
-              [0.8, 1.85, 0.7, 1.7, 1.85, 1.85, 0.65], font_size=8)
-    for row in t.rows[1:]:
-        remark = row.cells[6]
-        set_cell_bg(remark, "D9F0E1" if remark.text.startswith("PASS") else "F8D7D3")
-        remark.paragraphs[0].runs[0].bold = True
-    para("**Post-conditions:** " + " ".join(meta["post"]), size=10)
-    passed = sum(r["remark"] == "PASS" for r in rows)
-    summary_rows.append([meta["name"], str(len(rows)), str(passed), str(len(rows) - passed),
-                         f"{passed / len(rows) * 100:.0f}%"])
+        def comment(s_):
+            first = run1[r["id"]]["steps"][s_["no"] - 1]
+            note = s_["note"]
+            if first["result"] == "FAIL":
+                note += ("\n" if note else "") + f"Run 1: FAIL ({s_['defect'] or 'see E.8'}, fixed)"
+            return note
+
+        t = table(["Step", "Action", "Input (Test Data)", "Expected System Response", "Actual Output", "Pass/ Fail",
+                   "Comment"],
+                  [[str(s_["no"]), s_["action"], s_["data"], s_["expected"], s_["actual"], s_["result"].title(),
+                    comment(s_)] for s_ in r["steps"]],
+                  [0.4, 1.85, 1.6, 2.0, 2.0, 0.55, 1.85], font_size=7.5)
+        # keep the whole test case (header, pre-conditions, steps, post-conditions) on one page
+        for tbl in (hdr, t):
+            for row in tbl.rows:
+                keep_row(row)
+                for cell in row.cells:
+                    for cp in cell.paragraphs:
+                        cp.paragraph_format.keep_with_next = True
+        for row in t.rows[1:]:
+            set_cell_bg(row.cells[5], "D9F0E1" if row.cells[5].text == "Pass" else "F8D7D3")
+        t._tbl.getnext().getparent().remove(t._tbl.getnext())       # drop the spacer paragraph after the table
+        p = para("**Post-conditions:** " + " ".join(f"{k}. {x}" for k, x in enumerate(r["post"], start=1)), size=8.5,
+                 space_after=4)
+        p.paragraph_format.space_before = Pt(2)
+    passed = sum(r["result"] == "PASS" for r in rows)
+    st = sum(len(r["steps"]) for r in rows)
+    st_ok = sum(x["result"] == "PASS" for r in rows for x in r["steps"])
+    f1 = sum(run1[r["id"]]["result"] == "FAIL" for r in rows)
+    summary_rows.append([meta["name"], str(len(rows)), str(st), str(f1), str(passed), f"{st_ok} / {st}"])
 
 page_break()
 heading(f"E.{len(order) + 2} Test Summary", 2)
 total = sum(int(r[1]) for r in summary_rows)
-total_pass = sum(int(r[2]) for r in summary_rows)
-summary_rows.append(["**Total**", f"**{total}**", f"**{total_pass}**", f"**{total - total_pass}**",
-                     f"**{total_pass / total * 100:.0f}%**"])
-table(["Module", "Test cases", "Passed", "Failed", "Pass rate"], summary_rows, [3.6, 1.2, 1.2, 1.2, 1.2])
+total_pass = sum(int(r[4]) for r in summary_rows)
+summary_rows.append(["**Total**", f"**{total}**", f"**{n_steps}**", f"**{len(failed1)}**", f"**{total_pass}**",
+                     f"**{sum(x['result'] == 'PASS' for r in results['results'] for x in r['steps'])} / {n_steps}**"])
+table(["Module", "Test cases", "Steps", "Run 1: cases failed", "Run 2: cases passed", "Run 2: steps passed"],
+      summary_rows, [3.0, 1.1, 0.9, 1.3, 1.3, 1.4])
 table(["Integration test (tests/test_integration.py)", "What it verifies", "Result"], [
     ["test_end_to_end_loan_flow", "Register vendor & officer → login → profile → sale → apply ₹15,000 → approve → "
      "disburse (12 EMIs of ₹1,332.73) → pay EMI #1 on time", "PASS" if pytest_run.returncode == 0 else "See log"],
@@ -1022,9 +1075,9 @@ para("Actual outputs above are recorded by executing the code, not typed by hand
 heading(f"E.{len(order) + 3} Defects Found by Testing", 2)
 para(f"Run 1 executed the same cases on the first version of the code (git commit 0ce1911): {len(failed1)} cases "
      "FAILED. Each was logged as a defect, fixed and re-tested (Run 2, results above). The full Run-1 outputs are in "
-     "Section 9 of the Test Case Document.", size=10)
+     "Section 7 of the Test Case Document.", size=10)
 table(["Defect", "Severity", "Found by", "What happened in Run 1", "Fix", "Re-test"],
-      [[d["id"], d["severity"], ", ".join(d["cases"]), d["found"], d["fix"], "PASS - closed"]
+      [[d["id"], d["severity"], "\n".join(d["cases"]), d["found"], d["fix"], "PASS - closed"]
        for d in results["defects"]], [0.7, 0.7, 1.1, 3.3, 3.3, 0.9], font_size=8.5)
 
 doc.save(OUT)

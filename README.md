@@ -32,13 +32,15 @@ Demo logins (mobile / password):
 | Customer | 9988776655 | priya123 |
 | Municipal officer | 9090909090 | muni123 |
 
+To show the failed test cases in the browser, double-click `start_old_version.bat`: it runs the first version (commit 0ce1911, before the defects were fixed) at http://127.0.0.1:5001 next to the fixed one on port 5000.
+
 ## Run the tests
 
 ```bash
-python tests/run_test_cases.py                # 92 documented cases + 1,894 combinations, writes tests/test_results.json
-python tests/run_test_cases.py --module LOAN  # one module (AUTH, SALE, TS, LOAN, EMI); add --details for input/expected/actual
-python tests/run_test_cases.py --before-fix   # same cases on the first version (commit 0ce1911): shows the 9 FAILs
-python -m pytest tests -v                     # 101 tests: 92 cases + 7 combination suites + 2 integration tests
+python tests/run_test_cases.py                # 30 test cases (6 per module, Doc T_01 format) + 1,894 combinations
+python tests/run_test_cases.py --module LOAN  # one module (AUTH, SALE, TS, LOAN, EMI); add --details for every step
+python tests/run_test_cases.py --before-fix   # same cases on the first version (commit 0ce1911): shows the 7 FAILs
+python -m pytest tests -v                     # 39 tests: 30 test cases + 7 combination suites + 2 integration tests
 ```
 
 ## Rebuild the diagrams and the SRS

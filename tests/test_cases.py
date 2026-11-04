@@ -1,14 +1,18 @@
 """
-test_cases.py - The documented test cases for VendorSetu (SRS Appendix E and docs/Test_Cases_VendorSetu.docx).
+test_cases.py - The documented test cases of VendorSetu in the course format (Test Case Template, Doc T_01).
 
-Level "System": the case drives the running web application exactly as a user would (fill a form, click a
+6 test cases for each of the 5 tested modules (30 in total). Like the template, every test case has a header,
+pre-conditions, numbered steps (Action -> Expected System Response) and post-conditions; a step called
+"Check post-condition n" looks inside the database. Each test case covers the happy path and its failure
+conditions (invalid classes, boundary values, several errors at once, forged requests).
+
+Level "System": the steps drive the running web application exactly as a user would (fill a form, click a
 button) through Flask's test client, and the Actual Output is the message / value shown on the page.
-Anyone can repeat these by hand in the demo app.
-Level "Unit": the case calls a module function directly (used for the Trust Score formula).
+Level "Unit": the steps call the Trust Score formula directly.
 
-Every Expected Output was written from the SRS before running the code. `run_test_cases.py` executes each
-case on a fresh, empty database and records the Actual Output; `test_vendorsetu.py` runs the same cases
-under pytest.
+Every Expected Output was written from the SRS (and hand calculation) before running the code.
+run_test_cases.py executes each test case on a fresh, empty database and records the Actual Output of every
+step; test_vendorsetu.py runs the same cases under pytest.
 """
 import calendar
 import os
@@ -16,12 +20,12 @@ import re
 import shutil
 import sys
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 # VENDORSETU_APP_DIR lets run_test_cases.py --before-fix run the same cases against the first version of the
-# code (git commit 0ce1911), to show which cases failed before the defects were fixed.
+# code (git commit 0ce1911), to show which steps failed before the defects were fixed.
 APP_DIR = os.environ.get("VENDORSETU_APP_DIR") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app")
 sys.path.insert(0, APP_DIR)
 
@@ -37,81 +41,62 @@ def dmy(d):
     return d.strftime("%d-%m-%Y")
 
 
-def next_month(d):
-    """Same day next month (independent of the code under test)."""
-    y, m = (d.year + 1, 1) if d.month == 12 else (d.year, d.month + 1)
+def months_later(d, n):
+    """Same day n months later, clamped to the month's last day (independent of the code under test)."""
+    y, m = d.year + (d.month - 1 + n) // 12, (d.month - 1 + n) % 12 + 1
     return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
 
 
+# ====================================================================== test case structure (Doc T_01)
 @dataclass
-class Case:
+class Step:
+    action: str                 # what the tester does
+    data: str                   # input / test data
+    expected: str               # expected system response
+    fn: Callable                # performs the step, returns the actual output
+    note: str = ""              # Comment column: test design technique
+    defect: str = ""            # defect this step found in the first version of the code (see DEFECTS)
+
+
+@dataclass
+class TestCase:
+    __test__ = False            # a data structure, not a pytest test class
     id: str
     module: str
-    level: str
-    scenario: str
-    pre: str
-    steps: List[str]
-    input: str
-    expected: str
-    run: Callable
-    reqs: List[str] = field(default_factory=list)
-    technique: str = "Positive"       # Positive / Negative (EP) / BVA / Combination / Security
-    defect: str = ""                  # defect this case found in the first version (see DEFECTS)
+    name: str
+    description: str
+    pre: List[str]
+    steps: List[Step]
+    post: List[str]
+    reqs: List[str]
+    setup: Optional[Callable] = None        # creates the data listed in the pre-conditions
+    level: str = "System"
+
+    def run(self):
+        """Run every step on one fresh database; return the actual output of each step."""
+        actuals = []
+        with App() as a:
+            if self.setup:
+                self.setup(a)
+            for s in self.steps:
+                try:
+                    actuals.append(s.fn(a))
+                except Exception as e:          # a crash is a failed step, not a test-runner error
+                    actuals.append(f"ERROR: {type(e).__name__}: {e}")
+        return actuals
 
 
 MODULES = {
-    "AUTH": {
-        "name": "User Registration & Login",
-        "subsystem": "Authentication (Module 1 - modules/auth.py)",
-        "description": "Verify account creation rules (valid / invalid classes, boundaries, several errors at once), "
-                       "login, lock-out after 5 wrong passwords and protection of pages that need a login.",
-        "pre": ["Application is running with an empty database.",
-                "User is on the Register or Log in page of VendorSetu."],
-        "post": ["A valid registration stores exactly one user with a hashed password; rejected input stores nothing.",
-                 "After 5 consecutive wrong passwords the account stays locked even for the correct password."],
-    },
-    "SALE": {
-        "name": "Vendor Profile & Daily Sales Logging",
-        "subsystem": "Vendor Profile & Sales (Module 2 - modules/vendor.py)",
-        "description": "Verify the business profile rules and that a vendor can log one valid sales entry per day, "
-                       "while invalid amounts, dates and payment modes are rejected without saving anything.",
-        "pre": ["Vendor 'Ramesh Kumar' (9876543210 / ramesh123) is registered and logged in.",
-                "His business profile is saved (unless the case says otherwise)."],
-        "post": ["A valid entry is saved and counted in the 30-day summary; a rejected entry changes nothing.",
-                 "A rejected profile is not saved."],
-    },
-    "TS": {
-        "name": "Trust Score Calculation",
-        "subsystem": "Alt-Credit Scoring Engine (Module 3 - modules/credit_score.py)",
-        "description": "Verify the 0-100 Trust Score formula, the risk band and the loan-eligibility cut-off of 40.",
-        "pre": ["Formula: Sales (active days / 30 x 40) + Repayment (on-time / due x 40, or 20 if no EMI is due yet) "
-                "+ Peer vouching (min(vouches, 3) / 3 x 10) + Tenure (min(years, 5) / 5 x 10), rounded.",
-                "Bands: 70-100 LOW RISK, 40-69 MEDIUM RISK, 0-39 HIGH RISK."],
-        "post": ["Score, band and eligibility are returned / displayed; no stored data is modified."],
-    },
-    "LOAN": {
-        "name": "Loan Application & Bank Review",
-        "subsystem": "Loan Management (Module 4 - modules/loan.py)",
-        "description": "Verify progressive-tier loan application rules and the bank officer's approve / reject / "
-                       "disburse actions.",
-        "pre": ["Vendor 'Ramesh Kumar' (9876543210 / ramesh123): profile with 5 years of vending and a sale logged on "
-                "each of the last 30 days, so his Trust Score is 40 + 20 + 0 + 10 = 70.",
-                "Bank officer 'Anil Sharma' (9123456780 / bank123) is registered."],
-        "post": ["An accepted application is stored as PENDING; approval and disbursal change its status and create "
-                 "the EMI schedule; rejected requests change nothing.",
-                 "Only the owning vendor and bank officers can open a loan's page."],
-    },
-    "EMI": {
-        "name": "EMI Schedule & Repayment",
-        "subsystem": "Loan Management - Repayment (Module 4 - modules/loan.py)",
-        "description": "Verify the EMI schedule, the repayment rules, loan closure (next tier unlocked) and the "
-                       "default check.",
-        "pre": ["Ramesh's Tier-1 loan #1 of Rs 15,000 at 12% p.a. for 12 months has been approved and disbursed "
-                "today by the bank officer (unless the case says otherwise).",
-                "Hand calculation: r = 12% / 12 = 0.01, EMI = 15000 x 0.01 x 1.01^12 / (1.01^12 - 1) = Rs 1,332.73."],
-        "post": ["Paid installments are marked PAID (on time / late); when all 12 are paid the loan is CLOSED and "
-                 "Tier 2 (Rs 25,000) is unlocked."],
-    },
+    "AUTH": {"name": "User Registration & Login",
+             "subsystem": "Authentication (Module 1 - modules/auth.py)"},
+    "SALE": {"name": "Vendor Profile & Daily Sales",
+             "subsystem": "Vendor Profile & Sales (Module 2 - modules/vendor.py)"},
+    "TS": {"name": "Trust Score Calculation",
+           "subsystem": "Alt-Credit Scoring Engine (Module 3 - modules/credit_score.py)"},
+    "LOAN": {"name": "Loan Application & Bank Review",
+             "subsystem": "Loan Management (Module 4 - modules/loan.py)"},
+    "EMI": {"name": "EMI Schedule & Repayment",
+            "subsystem": "Loan Management - Repayment (Module 4 - modules/loan.py)"},
 }
 
 
@@ -127,6 +112,7 @@ class App:
         self.client = app_module.app.test_client()
         self.conn = _real_get_connection(self.path)
         init_db(self.conn)
+        self.page = ""
         return self
 
     def __exit__(self, *exc):
@@ -164,7 +150,7 @@ class App:
         self._request("get", "/logout")                       # consume the "Logged out." message
         return self.post("/login", phone=phone, password=password)
 
-    # ---- preconditions (created directly in the database, as described in each case's Pre-condition)
+    # ---- pre-condition data (created directly in the database, as listed in each case's Pre-conditions)
     def vendor(self, name="Ramesh Kumar", phone="9876543210", password="ramesh123", years=5, sale_days=30,
                profile=True):
         uid = auth.register_user(self.conn, name, phone, password, "VENDOR")
@@ -174,8 +160,11 @@ class App:
             vendor.log_daily_sale(self.conn, uid, (TODAY - timedelta(days=i)).isoformat(), 1500, "UPI")
         return uid
 
+    def user(self, name, phone, password, role):
+        return auth.register_user(self.conn, name, phone, password, role)
+
     def officer(self):
-        return auth.register_user(self.conn, "Anil Sharma", "9123456780", "bank123", "BANK_OFFICER")
+        return self.user("Anil Sharma", "9123456780", "bank123", "BANK_OFFICER")
 
     def disbursed_loan(self, on=TODAY):
         vid, oid = self.vendor(), self.officer()
@@ -190,922 +179,901 @@ def find(pattern, page, default="(not shown)"):
     return m.group(1) if m else default
 
 
-REGISTER = dict(name="Ramesh Kumar", phone="9876543210", role="VENDOR", password="ramesh123",
-                confirm_password="ramesh123")
-
-
-# ====================================================================== Module 1 - Authentication
 def count(a, table):
     return a.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
 
 
-def check_unchanged(a, table, before, msg, success_text):
-    """Post-condition: a rejected request must not add a row; an accepted one adds exactly one."""
-    expected_rows = before + (1 if success_text in msg else 0)
-    return "" if count(a, table) == expected_rows else f" [POST-CONDITION FAILED: {table} rows = {count(a, table)}]"
+# ====================================================================== step builders
+def screen(a):
+    """Which page is on screen, from its main heading."""
+    m = re.search(r"<h1[^>]*>(.*?)</h1>", a.page, re.S)
+    if not m:
+        return "(no page shown)"
+    text = " ".join(re.sub(r"<[^>]+>", " ", m.group(1)).split())
+    loan_page = re.match(r"Loan #(\d+)", text)
+    if loan_page:
+        return f"Loan #{loan_page.group(1)} page is shown"
+    return {"Log in": "Log in page is shown", "Create account": "Register page is shown",
+            "Loan applications": "Bank officer dashboard is shown"}.get(
+        text, "Vendor dashboard is shown" if text.startswith("Namaste") else f"'{text}' page is shown")
 
 
-def auth_register_valid():
-    with App() as a:
-        msg = a.post("/register", **REGISTER)
-        out = msg + (" -> Log in page is shown" if "<h1>Log in</h1>" in a.page else "")
-        rows = a.conn.execute("SELECT password_hash FROM users").fetchall()
-        if len(rows) != 1 or rows[0][0] == REGISTER["password"]:       # one user, password not stored as plain text
-            out += " [POST-CONDITION FAILED: user not stored with a hashed password]"
+def _shown(a, msg, show):
+    if msg.startswith("HTTP 5") or not (show or not msg):
+        return msg
+    return f"{msg} -> {screen(a)}" if msg else screen(a)
+
+
+def post(url, show=False, **data):
+    return lambda a: _shown(a, a.post(url, **data), show)
+
+
+def get(url, show=False):
+    return lambda a: _shown(a, a.get(url), show)
+
+
+def login(phone, password, show=True):
+    return lambda a: _shown(a, a.login(phone, password), show)
+
+
+def as_user(phone, password, then):
+    """Log in as another user first, then perform the step."""
+    def fn(a):
+        a.login(phone, password)
+        return then(a)
+    return fn
+
+
+def register(name="Ramesh Kumar", phone="9876543210", password="ramesh123", confirm=None, role="VENDOR",
+             show=False):
+    return post("/register", show, name=name, phone=phone, password=password,
+                confirm_password=password if confirm is None else confirm, role=role)
+
+
+def sale(day, amount, mode="UPI"):
+    return post("/vendor/sales", sale_date=day if isinstance(day, str) else day.isoformat(), amount=amount,
+                payment_mode=mode)
+
+
+PROFILE = dict(business_type="Fruits & vegetables", vending_zone="Sector 14 Market, Gurugram", years_vending="5",
+               upi_id="")
+
+
+def profile(**override):
+    return post("/vendor/profile", **{**PROFILE, **override})
+
+
+def apply(amount):
+    return post("/vendor/loan/apply", amount=amount)
+
+
+def review(decision, remarks="", loan_no=1):
+    return post(f"/officer/loan/{loan_no}/review", decision=decision, remarks=remarks)
+
+
+def pay(n, amount, loan_no=1):
+    return post(f"/vendor/loan/{loan_no}/pay/{n}", amount=amount)
+
+
+def then(*fns):
+    """Several actions in one step; the output of the last one is reported."""
+    def fn(a):
+        out = ""
+        for f in fns:
+            out = f(a)
         return out
+    return fn
 
 
-def auth_register(_existing=False, **override):
-    def run():
-        with App() as a:
-            if _existing:
-                a.post("/register", **REGISTER)
-            before = count(a, "users")
-            msg = a.post("/register", **{**REGISTER, **override})
-            return msg + check_unchanged(a, "users", before, msg, "Registration successful")
-    return run
+# ---- reading values shown on the dashboard / loan page
+def trust_card(a):
+    a.get("/dashboard")
+    score = find(r"<strong>(\d+)</strong><span>out of 100</span>", a.page)
+    band = find(r'<span class="score-badge [\w-]+">([A-Z ]+)</span>', a.page)
+    return f"Trust Score {score}/100, {band}"
 
 
-def auth_login_valid():
-    with App() as a:
-        a.vendor()
-        msg = a.login("9876543210", "ramesh123")
-        return msg + (" -> Vendor dashboard is shown" if "Namaste, Ramesh" in a.page else "")
+def components(a):
+    a.get("/dashboard")
+    rows = re.findall(r'<div class="row"><span>([^<]+)</span><span>([\d.]+) / (\d+)</span></div>', a.page)
+    return ", ".join(f"{n} {float(p):g}/{m}" for n, p, m in rows) or "(not shown)"
 
 
-def auth_lockout():
-    with App() as a:
-        a.vendor()
-        first4 = {a.login("9876543210", "wrong1") for _ in range(4)}
-        fifth = a.login("9876543210", "wrong1")
-        sixth = a.login("9876543210", "ramesh123")
-        return f"Attempts 1-4: {' / '.join(first4)} | Attempt 5: {fifth} | Attempt 6 (correct password): {sixth}"
+def limit_card(a):
+    a.get("/dashboard")
+    m = re.search(r'<div class="value">₹([\d,]+)</div><div class="label">Eligible limit · Tier (\d)', a.page)
+    return f"Eligible limit Rs {m.group(1)} (Tier {m.group(2)})" if m else "(eligible limit not shown)"
 
 
-# ====================================================================== Module 2 - Sales
-def sale(sale_date, amount, mode="UPI", profile=True, existing=None):
-    def run():
-        with App() as a:
-            vid = a.vendor(sale_days=0, profile=profile)
-            if existing:
-                vendor.log_daily_sale(a.conn, vid, existing.isoformat(), 1500, "UPI")
-            a.login("9876543210", "ramesh123")
-            before = count(a, "sales")
-            day = sale_date if isinstance(sale_date, str) else sale_date.isoformat()
-            msg = a.post("/vendor/sales", sale_date=day, amount=amount, payment_mode=mode)
-            return msg + check_unchanged(a, "sales", before, msg, "Sale logged")
-    return run
+def summary_cards(a):
+    a.get("/dashboard")
+    total = find(r'<div class="value">₹([\d,]+)</div><div class="label">Sales, last 30 days', a.page)
+    days = find(r'<div class="value">(\d+)<span class="muted"[^>]*>/30</span></div><div class="label">Active', a.page)
+    avg = find(r"avg ₹([\d,]+) per active day", a.page)
+    return f"30-day sales Rs {total}; active days {days}/30; average Rs {avg} per active day"
 
 
-def sale_summary():
-    with App() as a:
-        a.vendor(sale_days=0)
-        a.login("9876543210", "ramesh123")
-        for days_ago, amount in ((2, 1000), (1, 2000), (0, 3000)):
-            a.post("/vendor/sales", sale_date=(TODAY - timedelta(days=days_ago)).isoformat(), amount=amount,
-                   payment_mode="CASH")
-        a.get("/dashboard")
-        total = find(r'<div class="value">₹([\d,]+)</div><div class="label">Sales, last 30 days', a.page)
-        days = find(r'<div class="value">(\d+)<span class="muted"[^>]*>/30</span></div><div class="label">Active', a.page)
-        avg = find(r"avg ₹([\d,]+) per active day", a.page)
-        return f"30-day sales Rs {total}; active days {days}/30; average Rs {avg} per active day"
+def next_emi_card(a):
+    a.get("/dashboard")
+    m = re.search(r'<div class="value">₹([\d,.]+)</div><div class="label">Next EMI · due ([\d-]+)', a.page)
+    return f"Next EMI Rs {m.group(1)} due {m.group(2)}" if m else "(next EMI not shown)"
 
 
-# ====================================================================== Module 3 - Trust score
-def ts_unit(**kw):
-    def run():
+SCHEDULE_ROW = (r'<td><strong>(\d+)</strong></td>\s*<td>([\d-]+)</td>\s*<td class="num">₹([\d,.]+)</td>\s*'
+                r'<td class="num">₹([\d,.]+)</td>\s*<td class="num">₹([\d,.]+)</td>')
+
+
+def schedule(a):
+    a.get("/loan/1")
+    rows = re.findall(SCHEDULE_ROW, a.page)
+    if not rows:
+        return "(schedule not shown)"
+    return f"{len(rows)} installments; EMI #1 Rs {rows[0][2]} due {rows[0][1]}; EMI #{rows[-1][0]} due {rows[-1][1]}"
+
+
+def emi_split(n):
+    def fn(a):
+        a.get("/loan/1")
+        row = next((r for r in re.findall(SCHEDULE_ROW, a.page) if r[0] == str(n)), None)
+        return f"EMI #{n} = Principal Rs {row[3]} + Interest Rs {row[4]}" if row else "(not shown)"
+    return fn
+
+
+def loan_cards(a):
+    a.get("/loan/1")
+    amount = find(r'₹([\d,]+)</div><div class="label">Principal · Tier', a.page)
+    tier = find(r'</div><div class="label">Principal · Tier (\d)', a.page)
+    tenure = find(r'(\d+) mo</div>', a.page)
+    rate = find(r'<div class="label">@ ([\d.]+)% p.a.', a.page)
+    paid = find(r'(\d+/\d+)</div><div class="label">EMIs paid', a.page)
+    return f"Rs {amount}, Tier {tier}; {tenure} months @ {rate}% p.a.; EMIs paid {paid}"
+
+
+def loan_page_with_remarks(a):
+    a.get("/loan/1")
+    return f"{screen(a)}; Officer remarks: {find(r'<strong>Officer remarks:</strong> ([^<]+)</span>', a.page)}"
+
+
+# ---- post-condition checks (database)
+def _short(name):
+    return f"'{name[0]}' x {len(name)}" if len(name) > 20 and len(set(name)) == 1 else name
+
+
+def users_stored(a):
+    rows = a.conn.execute("SELECT name, role FROM users ORDER BY user_id").fetchall()
+    if not rows:
+        return "0 users stored"
+    s = "" if len(rows) == 1 else "s"
+    return f"{len(rows)} user{s} stored: " + ", ".join(f"{_short(n)} ({r})" for n, r in rows)
+
+
+def password_hashed(a):
+    rows = a.conn.execute("SELECT password_hash FROM users").fetchall()
+    h = rows[0][0] if rows else ""
+    hashed = h != "ramesh123" and h.startswith(("scrypt:", "pbkdf2:"))
+    return f"{len(rows)} user stored; password saved as " + ("a hash, not as 'ramesh123'" if hashed else repr(h))
+
+
+def lock_state(a):
+    r = a.conn.execute("SELECT is_locked, failed_attempts FROM users WHERE phone = '9876543210'").fetchone()
+    return f"is_locked = {r[0]}, failed_attempts = {r[1]}"
+
+
+def sales_stored(a):
+    rows = a.conn.execute("SELECT sale_date, amount, payment_mode FROM sales ORDER BY sale_date DESC").fetchall()
+    if not rows:
+        return "0 sales stored"
+    s = "" if len(rows) == 1 else "s"
+    return f"{len(rows)} sale{s} stored: " + ", ".join(
+        f"{dmy(date.fromisoformat(d))} Rs {amt:g} {mode}" for d, amt, mode in rows)
+
+
+def profile_stored(a):
+    r = a.conn.execute("SELECT business_type, vending_zone, years_vending FROM vendor_profiles").fetchone()
+    return f"Profile stored: {r[0]}, {r[1]}, {r[2]} years" if r else "No profile stored"
+
+
+def loans_stored(a):
+    rows = a.conn.execute("SELECT loan_id, amount, tier, tenure_months, interest_rate, trust_score, status "
+                          "FROM loans ORDER BY loan_id").fetchall()
+    if not rows:
+        return "0 loans stored"
+    s = "" if len(rows) == 1 else "s"
+    return f"{len(rows)} loan{s} stored: " + ", ".join(
+        f"#{i} Rs {amt:g}, Tier {t}, {n} months, {r:g}% p.a., Trust Score {ts}, {st}" for i, amt, t, n, r, ts, st in rows)
+
+
+def loan_status(a):
+    rows = a.conn.execute("SELECT loan_id, status, remarks, disbursed_on FROM loans ORDER BY loan_id").fetchall()
+    parts = []
+    for i, st, remarks, on in rows:
+        extra = f" (remarks: {remarks})" if remarks and st == "REJECTED" else ""
+        extra += f" on {dmy(date.fromisoformat(on))}" if on and st == "DISBURSED" else ""
+        parts.append(f"Loan #{i} {st}{extra}")
+    emis = count(a, "emi_installments")
+    return "; ".join(parts) + (f"; {emis} EMIs created" if emis and len(rows) == 1 and rows[0][1] == "DISBURSED"
+                               else "")
+
+
+def emis_paid(a):
+    rows = a.conn.execute("SELECT installment_no, paid_on_time FROM emi_installments WHERE status = 'PAID' "
+                          "ORDER BY installment_no").fetchall()
+    due = a.conn.execute("SELECT COUNT(*) FROM emi_installments WHERE status = 'DUE'").fetchone()[0]
+    if not rows:
+        return f"0 installments PAID; {due} DUE"
+    if len(rows) > 2:
+        return f"{len(rows)} of {len(rows) + due} EMIs PAID"
+    return ", ".join(f"EMI #{n} PAID {'on time' if t else 'late'}" for n, t in rows) + f"; {due} DUE"
+
+
+# ---- unit steps (Trust Score formula)
+def ts(**kw):
+    def fn(_a):
         try:
             r = credit_score.compute_trust_score(**kw)
         except ValidationError as e:
             return str(e)
         parts = " + ".join(f"{v:g}" for v in r["components"].values())
         return f"{parts} = {r['score']} -> {r['band']}, {'eligible' if r['eligible'] else 'not eligible'}"
-    return run
+    return fn
 
 
-def ts_dashboard():
-    with App() as a:
-        a.vendor(name="Sunita Devi", phone="9812345670", password="sunita123", years=0, sale_days=0)
-        a.login("9812345670", "sunita123")
-        score = find(r"<strong>(\d+)</strong><span>out of 100</span>", a.page)
-        band = find(r'<span class="score-badge [\w-]+">([A-Z ]+)</span>', a.page)
-        return f"Dashboard shows Trust Score {score}/100, {band}"
+def formula(active, window=30, on_time=0, due=0, vouches=0, years=0):
+    return ts(active_days=active, window_days=window, on_time_emis=on_time, emis_due=due, vouches=vouches,
+              years_vending=years)
 
 
-# ====================================================================== Module 4 - Loans
-def loan_apply(amount, low_score=False, twice=False):
-    def run():
-        with App() as a:
-            if low_score:
-                a.vendor(name="Sunita Devi", phone="9812345670", password="sunita123", years=0, sale_days=0)
-                a.login("9812345670", "sunita123")
-            else:
-                a.vendor()
-                a.login("9876543210", "ramesh123")
-            if twice:
-                a.post("/vendor/loan/apply", amount=15000)
-            before = count(a, "loans")
-            msg = a.post("/vendor/loan/apply", amount=amount)
-            return msg + check_unchanged(a, "loans", before, msg, "submitted")
-    return run
-
-
-def loan_reject_without_remarks():
-    with App() as a:
-        vid = a.vendor()
-        a.officer()
-        loan.apply_loan(a.conn, vid, 15000)
-        a.login("9123456780", "bank123")
-        return a.post("/officer/loan/1/review", decision="REJECT", remarks="")
-
-
-def loan_vendor_opens_officer_page():
-    with App() as a:
-        a.vendor()
+# ====================================================================== pre-condition setups
+def ramesh_logged_in(profile_saved=True, sale_days=0):
+    def setup(a):
+        a.vendor(profile=profile_saved, sale_days=sale_days)
         a.login("9876543210", "ramesh123")
-        return a.get("/officer")
+    return setup
 
 
-def loan_approve_disburse():
-    with App() as a:
-        vid = a.vendor()
-        a.officer()
-        loan.apply_loan(a.conn, vid, 15000)
-        a.login("9123456780", "bank123")
-        first = a.post("/officer/loan/1/review", decision="APPROVE", remarks="")
-        second = a.post("/officer/loan/1/disburse")
-        return f"{first} | {second}"
+def ramesh_eligible(a):
+    a.vendor()
+    a.login("9876543210", "ramesh123")
 
 
-# ====================================================================== Module 5 - EMI
-def emi_schedule():
-    with App() as a:
-        a.disbursed_loan()
+def pending_loan_officer_logged_in(a):
+    vid = a.vendor()
+    a.officer()
+    loan.apply_loan(a.conn, vid, 15000)
+    a.login("9123456780", "bank123")
+
+
+def disbursed_ramesh_logged_in(on=TODAY):
+    def setup(a):
+        a.disbursed_loan(on)
         a.login("9876543210", "ramesh123")
-        a.get("/loan/1")
-        rows = re.findall(r"<td><strong>(\d+)</strong></td>\s*<td>(\d{4}-\d{2}-\d{2})</td>\s*"
-                          r'<td class="num">₹([\d,.]+)</td>', a.page)
-        if not rows:
-            return "(schedule not shown)"
-        return f"{len(rows)} installments; EMI #1 Rs {rows[0][2]} due {rows[0][1]}; EMI #12 due {rows[-1][1]}"
+    return setup
 
 
-def emi_pay(steps):
-    """steps: list of (installment_no, amount); returns the message after the last payment."""
-    def run():
-        with App() as a:
-            a.disbursed_loan()
-            a.login("9876543210", "ramesh123")
-            msg = ""
-            for n, amount in steps:
-                msg = a.post(f"/vendor/loan/1/pay/{n}", amount=amount)
-            return msg
-    return run
+SUNITA = dict(name="Sunita Devi", phone="9812345670", password="sunita123", years=0, sale_days=0)
 
 
-def emi_full_repayment():
-    with App() as a:
-        _, lid = a.disbursed_loan()
-        a.login("9876543210", "ramesh123")
-        msg = ""
-        for inst in loan.get_installments(a.conn, lid):
-            msg = a.post(f"/vendor/loan/1/pay/{inst['installment_no']}", amount=inst["emi_amount"])
-        a.get("/dashboard")
-        limit = find(r'<div class="value">₹([\d,]+)</div><div class="label">Eligible limit · Tier (\d)', a.page)
-        tier = find(r'<div class="label">Eligible limit · Tier (\d)', a.page)
-        return f"{msg} -> Dashboard shows eligible limit Rs {limit} (Tier {tier})"
-
-
-def emi_default_check():
-    with App() as a:
-        a.disbursed_loan(on=TODAY - timedelta(days=150))
-        a.login("9123456780", "bank123")
-        return a.post("/officer/mark-defaults")
-
-
-# ====================================================================== helpers for the extended cases
-def each(*labelled_runs):
-    """Boundary pairs / several inputs in one case: 'label: actual | label: actual'."""
-    def run():
-        return " | ".join(f"{label}: {fn()}" for label, fn in labelled_runs)
-    return run
-
-
-def auth_login_case(phone, password):
-    def run():
-        with App() as a:
-            a.vendor()
-            msg = a.login(phone, password)
-            return msg + (" [POST-CONDITION FAILED: user is logged in]" if "Namaste," in a.page else "")
-    return run
-
-
-def auth_counter_reset():
-    with App() as a:
-        a.vendor()
-        for _ in range(4):
-            a.login("9876543210", "wrong1")
-        first = a.login("9876543210", "ramesh123")
-        for _ in range(4):
-            last_wrong = a.login("9876543210", "wrong1")
-        again = a.login("9876543210", "ramesh123")
-        return f"4 wrong + correct: {first} | 4 more wrong: {last_wrong} | Correct again: {again}"
-
-
-def auth_dashboard_without_login():
-    with App() as a:
-        msg = a.get("/dashboard")
-        return msg + (" -> Log in page is shown" if "<h1>Log in</h1>" in a.page else "")
-
-
-def profile_case(**form):
-    def run():
-        with App() as a:
-            a.vendor(profile=False, sale_days=0)
-            a.login("9876543210", "ramesh123")
-            data = {"business_type": "Fruits & vegetables", "vending_zone": "Sector 14 Market, Gurugram",
-                    "years_vending": "5", "upi_id": "", **form}
-            before = count(a, "vendor_profiles")
-            msg = a.post("/vendor/profile", **data)
-            return msg + check_unchanged(a, "vendor_profiles", before, msg, "Profile saved")
-    return run
-
-
-def ts_after_sale():
-    with App() as a:
-        a.vendor(name="Sunita Devi", phone="9812345670", password="sunita123", years=0, sale_days=0)
-        a.login("9812345670", "sunita123")
-        before = find(r"<strong>(\d+)</strong><span>out of 100</span>", a.page)
-        a.post("/vendor/sales", sale_date=TODAY.isoformat(), amount=800, payment_mode="CASH")
-        after = find(r"<strong>(\d+)</strong><span>out of 100</span>", a.page)
-        band = find(r'<span class="score-badge [\w-]+">([A-Z ]+)</span>', a.page)
-        return f"Before: {before}/100 | After logging 1 sale: {after}/100, {band}"
-
-
-def loan_no_profile():
-    with App() as a:
-        a.vendor(profile=False, sale_days=0)
-        a.login("9876543210", "ramesh123")
-        return a.post("/vendor/loan/apply", amount=10000)
-
-
-def loan_officer_action(setup, url, **form):
-    """setup: 'pending' or 'approved'; then the officer sends one request. A refused request must not change
-    the loan's status."""
-    def run():
-        with App() as a:
-            vid = a.vendor()
-            oid = a.officer()
-            lid = loan.apply_loan(a.conn, vid, 15000)
-            if setup == "approved":
-                loan.review_loan(a.conn, lid, oid, "APPROVE", "")
-            a.login("9123456780", "bank123")
-            before = a.conn.execute("SELECT status FROM loans WHERE loan_id = 1").fetchone()[0]
-            msg = a.post(url, **form)
-            after = a.conn.execute("SELECT status FROM loans WHERE loan_id = 1").fetchone()[0]
-            if before != after:
-                msg += f" [POST-CONDITION FAILED: status changed to {after}]"
-            return msg
-    return run
-
-
-def loan_withdraw_and_reapply():
-    with App() as a:
-        vid = a.vendor()
-        loan.apply_loan(a.conn, vid, 15000)
-        a.login("9876543210", "ramesh123")
-        first = a.post("/vendor/loan/1/withdraw")
-        second = a.post("/vendor/loan/apply", amount=12000)
-        return f"{first} | {second}"
-
-
-def loan_reject_with_remarks():
-    with App() as a:
-        vid = a.vendor()
-        a.officer()
-        loan.apply_loan(a.conn, vid, 15000)
-        a.login("9123456780", "bank123")
-        first = a.post("/officer/loan/1/review", decision="REJECT", remarks="Sales record too short")
-        a.login("9876543210", "ramesh123")
-        a.get("/loan/1")
-        remarks = find(r"<strong>Officer remarks:</strong> ([^<]+)</span>", a.page)
-        third = a.post("/vendor/loan/apply", amount=15000)
-        return f"{first} | Vendor's loan page shows remarks: {remarks} | {third}"
-
-
-OTHER_USERS = {"CUSTOMER": ("Priya Mehta", "9988776655", "priya123"),
-               "MUNICIPAL_OFFICER": ("R K Verma", "9090909090", "muni123"),
-               "VENDOR": ("Sunita Devi", "9812345670", "sunita123")}
-
-
-def loan_page_as(role):
-    """Another user tries to open Ramesh's loan #1 page."""
-    def run():
-        with App() as a:
-            vid = a.vendor()
-            loan.apply_loan(a.conn, vid, 15000)
-            name, phone, pw = OTHER_USERS[role]
-            auth.register_user(a.conn, name, phone, pw, role)
-            a.login(phone, pw)
-            msg = a.get("/loan/1")
-            if re.search(r"<h1[^>]*>Loan #1 ", a.page):
-                return (msg or "(no message)") + " [POST-CONDITION FAILED: Ramesh's loan #1 page is shown]"
-            return msg
-    return run
-
-
-def emi_case(steps, as_other_vendor=False, loan_no=1):
-    """Ramesh's loan #1 is disbursed today; send the payments in `steps`; a refused payment must not mark
-    any installment PAID."""
-    def run():
-        with App() as a:
-            a.disbursed_loan()
-            if as_other_vendor:
-                a.vendor(name="Sunita Devi", phone="9812345670", password="sunita123", years=0, sale_days=0)
-                a.login("9812345670", "sunita123")
-            else:
-                a.login("9876543210", "ramesh123")
-            msg = ""
-            for n, amount in steps:
-                msg = a.post(f"/vendor/loan/{loan_no}/pay/{n}", amount=amount)
-            paid = a.conn.execute("SELECT COUNT(*) FROM emi_installments WHERE status = 'PAID'").fetchone()[0]
-            if " paid " not in msg and paid:
-                msg += f" [POST-CONDITION FAILED: {paid} installment(s) marked PAID]"
-            return msg
-    return run
-
-
-def emi_late_payment():
-    with App() as a:
-        a.disbursed_loan(on=TODAY - timedelta(days=40))
-        a.login("9876543210", "ramesh123")
-        msg = a.post("/vendor/loan/1/pay/1", amount=1332.73)
-        a.get("/dashboard")
-        score = find(r"<strong>(\d+)</strong><span>out of 100</span>", a.page)
-        return f"{msg} -> Trust Score {score}/100"
-
-
-def emi_score_after_on_time():
-    with App() as a:
-        a.disbursed_loan()
-        a.login("9876543210", "ramesh123")
-        before = find(r"<strong>(\d+)</strong><span>out of 100</span>", a.page)
-        a.post("/vendor/loan/1/pay/1", amount=1332.73)
-        a.get("/dashboard")
-        after = find(r"<strong>(\d+)</strong><span>out of 100</span>", a.page)
-        return f"Before: {before}/100 | After paying EMI #1 on time: {after}/100"
-
-
-def emi_not_disbursed():
-    with App() as a:
-        vid, oid = a.vendor(), a.officer()
-        lid = loan.apply_loan(a.conn, vid, 15000)
-        loan.review_loan(a.conn, lid, oid, "APPROVE", "")
-        a.login("9876543210", "ramesh123")
-        return a.post("/vendor/loan/1/pay/1", amount=1332.73)
-
-
-def emi_default_boundary(days_overdue):
-    def run():
-        with App() as a:
-            a.disbursed_loan()
-            a.conn.execute("UPDATE emi_installments SET due_date = ? WHERE installment_no = 1",
-                           ((TODAY - timedelta(days=days_overdue)).isoformat(),))
-            a.conn.commit()
-            a.login("9123456780", "bank123")
-            return a.post("/officer/mark-defaults")
-    return run
-
-
-# ====================================================================== the documented cases
-LOGIN_RAMESH = "Log in as Ramesh (9876543210 / ramesh123)"
-LOGIN_OFFICER = "Log in as bank officer (9123456780 / bank123)"
-SALE_STEPS = [LOGIN_RAMESH, "In 'Daily sales', enter the date, amount and payment mode", "Click 'Log sale'"]
-NEW_SUNITA = "Vendor 'Sunita Devi' (9812345670 / sunita123) has a profile with 0 years of vending and no sales"
-
-CASES = [
-    # ---------------------------------------------------------------- Module 1
-    Case("TC-AUTH-01", "AUTH", "System", "Register with valid details", "No account exists for 9876543210",
-         ["Open the Register page", "Enter name, mobile, role, password and confirm password",
-          "Click 'Create account'"],
-         "Name = Ramesh Kumar, Mobile = 9876543210, Role = Street Vendor, Password = ramesh123, "
-         "Confirm = ramesh123",
-         "Registration successful. Please log in. -> Log in page is shown", auth_register_valid, ["FR-AUTH-1"], technique="Positive"),
-    Case("TC-AUTH-02", "AUTH", "System", "Register with an already registered mobile number",
-         "An account already exists for 9876543210",
-         ["Open the Register page", "Enter the same mobile number with other details", "Click 'Create account'"],
-         "Name = Ramesh Kumar, Mobile = 9876543210 (already registered), Password = ramesh123",
-         "Mobile number already registered", auth_register(_existing=True), ["FR-AUTH-2"], technique="Negative"),
-    Case("TC-AUTH-03", "AUTH", "System", "Register with an invalid mobile number", "-",
-         ["Open the Register page", "Enter a 5-digit mobile number", "Click 'Create account'"],
-         "Mobile = 98765 (5 digits), other fields valid",
-         "Enter a valid 10-digit mobile number", auth_register(phone="98765"), ["FR-AUTH-2"], technique="Negative (EP)"),
-    Case("TC-AUTH-04", "AUTH", "System", "Register with a weak password", "-",
-         ["Open the Register page", "Enter a 3-letter password in both password fields", "Click 'Create account'"],
-         "Password = abc, Confirm = abc, other fields valid",
-         "Password must be at least 6 characters with letters and digits",
-         auth_register(password="abc", confirm_password="abc"), ["FR-AUTH-3"], technique="Negative (EP)"),
-    Case("TC-AUTH-05", "AUTH", "System", "Register with non-matching passwords", "-",
-         ["Open the Register page", "Enter different values in Password and Confirm password",
-          "Click 'Create account'"],
-         "Password = ramesh123, Confirm = ramesh124", "Passwords do not match",
-         auth_register(confirm_password="ramesh124"), ["FR-AUTH-1"], technique="Negative"),
-    Case("TC-AUTH-06", "AUTH", "System", "Log in with correct credentials", "Ramesh is registered as a vendor",
-         ["Open the Log in page", "Enter mobile number and password", "Click 'Log in'"],
-         "Mobile = 9876543210, Password = ramesh123",
-         "Welcome, Ramesh Kumar! -> Vendor dashboard is shown", auth_login_valid, ["FR-AUTH-5"], technique="Positive"),
-    Case("TC-AUTH-07", "AUTH", "System", "Account lock after 5 wrong passwords", "Ramesh is registered as a vendor",
-         ["Log in with a wrong password 5 times", "Then log in with the correct password"],
-         "Mobile = 9876543210; Password = wrong1 (x5), then ramesh123",
-         "Attempts 1-4: Invalid mobile number or password | Attempt 5: Account locked after 5 failed attempts. "
-         "Contact support | Attempt 6 (correct password): Account locked after 5 failed attempts. Contact support",
-         auth_lockout, ["FR-AUTH-6", "NFR-SEC-2"], technique="BVA"),
-
-    # ---------------------------------------------------------------- Module 2
-    Case("TC-SALE-01", "SALE", "System", "Log a valid daily sale", "No sale logged today", SALE_STEPS,
-         f"Date = {dmy(TODAY)} (today), Amount = 1500, Mode = UPI",
-         "Sale logged. Your trust score has been updated.", sale(TODAY, 1500), ["FR-VEN-3"], technique="Positive"),
-    Case("TC-SALE-02", "SALE", "System", "Log a sale with zero amount", "-", SALE_STEPS,
-         f"Date = {dmy(TODAY)}, Amount = 0, Mode = Cash",
-         "Sale amount must be greater than 0", sale(TODAY, 0, "CASH"), ["FR-VEN-4"], technique="BVA"),
-    Case("TC-SALE-03", "SALE", "System", "Log a sale for a future date", "-", SALE_STEPS,
-         f"Date = {dmy(TODAY + timedelta(days=2))} (2 days ahead), Amount = 1200, Mode = Cash",
-         "Sale date cannot be in the future", sale(TODAY + timedelta(days=2), 1200, "CASH"), ["FR-VEN-5"], technique="Negative (EP)"),
-    Case("TC-SALE-04", "SALE", "System", "Log a second sale for the same date",
-         f"A sale for {dmy(TODAY - timedelta(days=1))} is already logged", SALE_STEPS,
-         f"Date = {dmy(TODAY - timedelta(days=1))}, Amount = 900, Mode = Cash",
-         "Sales already logged for this date",
-         sale(TODAY - timedelta(days=1), 900, "CASH", existing=TODAY - timedelta(days=1)), ["FR-VEN-5"], technique="Negative"),
-    Case("TC-SALE-05", "SALE", "System", "Log a sale above the daily limit", "-", SALE_STEPS,
-         f"Date = {dmy(TODAY)}, Amount = 150000, Mode = UPI",
-         "Sale amount cannot exceed Rs 1,00,000 per day", sale(TODAY, 150000), ["FR-VEN-4"], technique="Negative (EP)"),
-    Case("TC-SALE-06", "SALE", "System", "Log a sale before saving the business profile",
-         "Ramesh has NOT saved his business profile", SALE_STEPS,
-         f"Date = {dmy(TODAY)}, Amount = 1500, Mode = UPI",
-         "Complete your vendor profile first", sale(TODAY, 1500, profile=False), ["FR-VEN-6"], technique="Negative"),
-    Case("TC-SALE-07", "SALE", "System", "30-day summary on the dashboard", "No sales logged yet",
-         ["Log three sales (one per day)", "Open the dashboard and read the summary cards"],
-         f"{dmy(TODAY - timedelta(days=2))}: 1000, {dmy(TODAY - timedelta(days=1))}: 2000, {dmy(TODAY)}: 3000",
-         "30-day sales Rs 6,000; active days 3/30; average Rs 2,000 per active day", sale_summary, ["FR-VEN-7"], technique="Positive"),
-
-    # ---------------------------------------------------------------- Module 3
-    Case("TC-TS-01", "TS", "Unit", "Ideal vendor - maximum observable score", "No EMI due yet",
-         ["Call compute_trust_score() with the input values"],
-         "Active days = 30/30, EMIs due = 0, Vouches = 3, Years = 5",
-         "40 + 20 + 10 + 10 = 80 -> LOW RISK, eligible",
-         ts_unit(active_days=30, window_days=30, on_time_emis=0, emis_due=0, vouches=3, years_vending=5),
-         ["FR-TS-2", "FR-TS-3", "FR-TS-4"], technique="Positive"),
-    Case("TC-TS-02", "TS", "Unit", "Boundary value - score exactly 40", "No EMI due yet",
-         ["Call compute_trust_score() with the input values"],
-         "Active days = 15/30, EMIs due = 0, Vouches = 0, Years = 0",
-         "20 + 20 + 0 + 0 = 40 -> MEDIUM RISK, eligible",
-         ts_unit(active_days=15, window_days=30, on_time_emis=0, emis_due=0, vouches=0, years_vending=0),
-         ["FR-TS-2", "FR-TS-4", "FR-TS-5"], technique="BVA"),
-    Case("TC-TS-03", "TS", "Unit", "Boundary value - score just below 40", "No EMI due yet",
-         ["Call compute_trust_score() with the input values"],
-         "Active days = 14/30, EMIs due = 0, Vouches = 0, Years = 0",
-         "18.7 + 20 + 0 + 0 = 39 -> HIGH RISK, not eligible",
-         ts_unit(active_days=14, window_days=30, on_time_emis=0, emis_due=0, vouches=0, years_vending=0),
-         ["FR-TS-2", "FR-TS-4", "FR-TS-5"], technique="BVA"),
-    Case("TC-TS-04", "TS", "Unit", "Vendor with a partial repayment record", "-",
-         ["Call compute_trust_score() with the input values"],
-         "Active days = 24/30, On-time EMIs = 6 of 12 due, Vouches = 1, Years = 2",
-         "32 + 20 + 3.3 + 4 = 59 -> MEDIUM RISK, eligible",
-         ts_unit(active_days=24, window_days=30, on_time_emis=6, emis_due=12, vouches=1, years_vending=2),
-         ["FR-TS-2", "FR-TS-4"], technique="Positive"),
-    Case("TC-TS-05", "TS", "Unit", "Invalid input - active days exceed the window", "-",
-         ["Call compute_trust_score() with the input values"],
-         "Active days = 35, Window = 30", "Active days cannot exceed the observation window",
-         ts_unit(active_days=35, window_days=30, on_time_emis=0, emis_due=0, vouches=0, years_vending=0),
-         ["FR-TS-1"], technique="Negative"),
-    Case("TC-TS-06", "TS", "System", "New vendor sees the score on the dashboard", NEW_SUNITA,
-         ["Log in as Sunita", "Read the Trust Score card"],
-         "Mobile = 9812345670, Password = sunita123",
-         "Dashboard shows Trust Score 20/100, HIGH RISK", ts_dashboard, ["FR-TS-3", "FR-TS-4", "FR-TS-6"], technique="Positive"),
-
-    # ---------------------------------------------------------------- Module 4
-    Case("TC-LOAN-01", "LOAN", "System", "Eligible vendor applies for a Tier-1 loan", "Ramesh has no loan",
-         [LOGIN_RAMESH, "In 'Micro-credit', enter the amount", "Click 'Apply for loan'"],
-         "Amount = 15000 (Trust Score 70, Tier 1 limit 15,000)",
-         "Loan application #1 submitted. Status: PENDING.", loan_apply(15000), ["FR-LN-1", "FR-LN-6"], technique="BVA"),
-    Case("TC-LOAN-02", "LOAN", "System", "Amount above the tier limit", "Ramesh has no loan",
-         [LOGIN_RAMESH, "Enter an amount above Rs 15,000", "Click 'Apply for loan'"],
-         "Amount = 20000", "Amount exceeds Tier 1 limit of Rs 15,000", loan_apply(20000), ["FR-LN-2", "FR-LN-4"], technique="Negative (EP)"),
-    Case("TC-LOAN-03", "LOAN", "System", "Vendor with a low Trust Score applies", NEW_SUNITA + " (score 20)",
-         ["Log in as Sunita", "Enter the amount", "Click 'Apply for loan'"],
-         "Amount = 10000", "Trust score 20 is below 40. Not eligible", loan_apply(10000, low_score=True),
-         ["FR-TS-5", "BR-4"], technique="Negative"),
-    Case("TC-LOAN-04", "LOAN", "System", "Second application while one is pending",
-         "Ramesh's application #1 for Rs 15,000 is PENDING",
-         [LOGIN_RAMESH, "Enter the amount", "Click 'Apply for loan'"],
-         "Amount = 5000", "You already have an active loan", loan_apply(5000, twice=True), ["FR-LN-5", "BR-2"], technique="Negative"),
-    Case("TC-LOAN-05", "LOAN", "System", "Officer rejects without remarks", "Ramesh's application #1 is PENDING",
-         [LOGIN_OFFICER, "Leave the Remarks box empty", "Click 'Reject' on application #1"],
-         "Remarks = (empty), Decision = Reject", "Remarks are required when rejecting", loan_reject_without_remarks,
-         ["FR-BNK-3", "BR-5"], technique="Negative"),
-    Case("TC-LOAN-06", "LOAN", "System", "Vendor tries to open the bank officer page", "-",
-         [LOGIN_RAMESH, "Type the officer page address in the browser"],
-         "URL = /officer", "You are not allowed to open that page.", loan_vendor_opens_officer_page,
-         ["FR-AUTH-7", "FR-BNK-4", "BR-1"], technique="Security"),
-    Case("TC-LOAN-07", "LOAN", "System", "Officer approves and disburses", "Ramesh's application #1 is PENDING",
-         [LOGIN_OFFICER, "Click 'Approve' on application #1", "Click 'Disburse' on application #1"],
-         "Decision = Approve, then Disburse",
-         "Loan #1 APPROVED. | Loan #1 disbursed. 12 EMIs of Rs 1332.73 scheduled.", loan_approve_disburse,
-         ["FR-BNK-2", "FR-BNK-5", "FR-BNK-6"], technique="Positive"),
-
-    # ---------------------------------------------------------------- Module 5
-    Case("TC-EMI-01", "EMI", "System", "View the EMI schedule", "-",
-         [LOGIN_RAMESH, "Click 'View' on loan #1", "Read the EMI schedule table"],
-         f"Loan #1: P = 15000, r = 12% p.a., n = 12, disbursed {dmy(TODAY)}",
-         f"12 installments; EMI #1 Rs 1,332.73 due {next_month(TODAY).isoformat()}; "
-         f"EMI #12 due {date(TODAY.year + 1, TODAY.month, min(TODAY.day, calendar.monthrange(TODAY.year + 1, TODAY.month)[1])).isoformat()}",
-         emi_schedule, ["FR-BNK-6", "FR-EMI-1"], technique="Positive"),
-    Case("TC-EMI-02", "EMI", "System", "Pay EMI #1 before its due date", "No EMI paid yet",
-         [LOGIN_RAMESH, "Open loan #1", "Click 'Pay' on installment #1 (amount pre-filled)"],
-         f"Installment = 1, Amount = 1332.73, paid on {dmy(TODAY)}", "EMI #1 paid on time.",
-         emi_pay([(1, 1332.73)]), ["FR-EMI-5"], technique="Positive"),
-    Case("TC-EMI-03", "EMI", "System", "Pay less than the EMI amount", "No EMI paid yet",
-         [LOGIN_RAMESH, "Open loan #1", "Change the amount to 1000", "Click 'Pay' on installment #1"],
-         "Installment = 1, Amount = 1000", "Amount is less than EMI due of Rs 1332.73",
-         emi_pay([(1, 1000)]), ["FR-EMI-3"], technique="Negative"),
-    Case("TC-EMI-04", "EMI", "System", "Skip an installment (forged request)", "EMI #1 is paid; #2 is due",
-         [LOGIN_RAMESH, "Pay EMI #1", "Send a payment request for installment #3 directly (the page only offers #2)"],
-         "POST /vendor/loan/1/pay/3, Amount = 1332.73", "Pay earlier installment #2 first",
-         emi_pay([(1, 1332.73), (3, 1332.73)]), ["FR-EMI-2"], technique="Security"),
-    Case("TC-EMI-05", "EMI", "System", "Pay the same installment twice (forged request)", "EMI #1 is already paid",
-         [LOGIN_RAMESH, "Pay EMI #1", "Send a payment request for installment #1 again"],
-         "POST /vendor/loan/1/pay/1, Amount = 1332.73", "Installment already paid",
-         emi_pay([(1, 1332.73), (1, 1332.73)]), ["FR-EMI-4"], technique="Security"),
-    Case("TC-EMI-06", "EMI", "System", "Repay all 12 EMIs (progressive lending)", "No EMI paid yet",
-         [LOGIN_RAMESH, "Pay installments 1 to 12 in order", "Open the dashboard"],
-         "12 payments, each equal to the EMI shown",
-         "EMI #12 paid on time. Loan fully repaid - you are now eligible for the next tier! -> Dashboard shows "
-         "eligible limit Rs 25,000 (Tier 2)", emi_full_repayment, ["FR-EMI-6", "FR-LN-3"], technique="Positive"),
-    Case("TC-EMI-07", "EMI", "System", "Default check marks a 90+ days overdue loan",
-         f"Loan #1 was disbursed on {dmy(TODAY - timedelta(days=150))} (150 days ago) and no EMI has been paid",
-         [LOGIN_OFFICER, "Click 'Run default check (90+ days overdue)'"],
-         "(button click, no data)", "Default check complete: 1 loan(s) marked DEFAULTED.", emi_default_check,
-         ["FR-BNK-7", "BR-6"], technique="Positive"),
-]
-
-# ====================================================================== extended cases (negative, BVA, combinations)
+# ====================================================================== the documented test cases
 WEAK = "Password must be at least 6 characters with letters and digits"
 BAD_MOBILE = "Enter a valid 10-digit mobile number"
 INVALID_LOGIN = "Invalid mobile number or password"
+LOCKED = "Account locked after 5 failed attempts. Contact support"
+REG_OK = "Registration successful. Please log in."
 LOGGED = "Sale logged. Your trust score has been updated."
-REGISTER_STEPS = ["Open the Register page", "Fill the form with the input values", "Click 'Create account'"]
-LOGIN_STEPS = ["Open the Log in page", "Enter the mobile number and password", "Click 'Log in'"]
-PROFILE_STEPS = [LOGIN_RAMESH, "In 'Business profile', enter the values", "Click 'Save profile'"]
-LOAN_STEPS = [LOGIN_RAMESH, "In 'Micro-credit', enter the amount", "Click 'Apply for loan'"]
-PAY_STEPS = [LOGIN_RAMESH, "Open loan #1", "Enter the amount for the installment", "Click 'Pay'"]
-NO_PROFILE = "Ramesh is registered but has NOT saved his business profile"
-A50, A51 = "A" * 50, "A" * 51
+CREATE = "Fill the Register form and click 'Create account'"
+LOG_SALE = "In 'Daily sales' enter the values and click 'Log sale'"
+APPLY = "In 'Micro-credit' enter the amount and click 'Apply for loan'"
+PAY = "On loan #1 enter the amount and click 'Pay' on the installment"
+CALL = "Call compute_trust_score() with the input"
+CHECK = "Check post-condition"
+T, Y, TM = TODAY, TODAY - timedelta(days=1), TODAY + timedelta(days=1)
 D90, D91 = TODAY - timedelta(days=90), TODAY - timedelta(days=91)
+EMPTY_DB = "The application is running with an empty database"
+RAMESH_PRE = "Vendor Ramesh Kumar (9876543210 / ramesh123) is registered and logged in"
+ELIGIBLE_PRE = [RAMESH_PRE, "His profile shows 5 years of vending and he logged a sale on each of the last 30 days, "
+                "so his Trust Score is 40 + 20 + 0 + 10 = 70 (LOW RISK)", "He has no loan"]
+DISBURSED_PRE = [RAMESH_PRE, f"His Tier-1 loan #1 of Rs 15,000 at 12% p.a. for 12 months was approved and disbursed "
+                 f"today ({dmy(TODAY)}) by bank officer Anil Sharma",
+                 "Hand calculation: r = 12% / 12 = 0.01; EMI = 15000 x 0.01 x 1.01^12 / (1.01^12 - 1) = Rs 1,332.73"]
 
-CASES += [
-    # ---------------------------------------------------------------- Module 1 (extended)
-    Case("TC-AUTH-08", "AUTH", "System", "Register with the name left empty", "-", REGISTER_STEPS,
-         "Name = (empty), other fields valid", "Name is required", auth_register(name=""), ["FR-AUTH-1"],
-         technique="Negative (EP)"),
-    Case("TC-AUTH-09", "AUTH", "System", "Register with digits as the name", "-", REGISTER_STEPS,
-         "Name = 12345, other fields valid", "Name can contain only letters, spaces and dots",
-         auth_register(name="12345"), ["FR-AUTH-1"], technique="Negative (EP)", defect="DEF-04"),
-    Case("TC-AUTH-10", "AUTH", "System", "Boundary value - name length 50 / 51", "No account exists for 9876543210",
-         REGISTER_STEPS, "Name = 'A' x 50 characters; then Name = 'A' x 51 characters (fresh database each time)",
-         "50 characters: Registration successful. Please log in. | 51 characters: Name must be at most 50 characters",
-         each(("50 characters", auth_register(name=A50)), ("51 characters", auth_register(name=A51))),
-         ["FR-AUTH-1"], technique="BVA", defect="DEF-04"),
-    Case("TC-AUTH-11", "AUTH", "System", "Mobile number - invalid equivalence classes", "-", REGISTER_STEPS,
-         "Mobile = 987654321 (9 digits) / 98765432101 (11 digits) / 5876543210 (starts with 5) / 98765abcde",
-         f"9 digits: {BAD_MOBILE} | 11 digits: {BAD_MOBILE} | Starts with 5: {BAD_MOBILE} | Letters: {BAD_MOBILE}",
-         each(("9 digits", auth_register(phone="987654321")), ("11 digits", auth_register(phone="98765432101")),
-              ("Starts with 5", auth_register(phone="5876543210")), ("Letters", auth_register(phone="98765abcde"))),
-         ["FR-AUTH-2"], technique="Negative (EP)"),
-    Case("TC-AUTH-12", "AUTH", "System", "Boundary value - password length 5 / 6", "No account exists for 9876543210",
-         REGISTER_STEPS, "Password = ab123 (5 characters); then Password = ab1234 (6 characters)",
-         f"5 characters: {WEAK} | 6 characters: Registration successful. Please log in.",
-         each(("5 characters", auth_register(password="ab123", confirm_password="ab123")),
-              ("6 characters", auth_register(password="ab1234", confirm_password="ab1234"))),
-         ["FR-AUTH-3"], technique="BVA"),
-    Case("TC-AUTH-13", "AUTH", "System", "Password with only letters / only digits", "-", REGISTER_STEPS,
-         "Password = abcdefgh (no digit); then Password = 12345678 (no letter)",
-         f"Only letters: {WEAK} | Only digits: {WEAK}",
-         each(("Only letters", auth_register(password="abcdefgh", confirm_password="abcdefgh")),
-              ("Only digits", auth_register(password="12345678", confirm_password="12345678"))),
-         ["FR-AUTH-3"], technique="Negative (EP)"),
-    Case("TC-AUTH-14", "AUTH", "System", "No role / forged role", "-",
-         ["Open the Register page", "Do not select a role (or send role=ADMIN in the request)",
-          "Click 'Create account'"],
-         "Role = (not selected); then Role = ADMIN (not in the list)",
-         "Not selected: Invalid role selected | ADMIN: Invalid role selected",
-         each(("Not selected", auth_register(role="")), ("ADMIN", auth_register(role="ADMIN"))),
-         ["FR-AUTH-1"], technique="Security"),
-    Case("TC-AUTH-15", "AUTH", "System", "Several invalid fields at once (combination)", "-", REGISTER_STEPS,
-         "(a) all fields empty; (b) Mobile = 98765 and Password = abc together",
-         f"All empty: Name is required | Mobile + password invalid: {BAD_MOBILE}",
-         each(("All empty", auth_register(name="", phone="", password="", confirm_password="", role="")),
-              ("Mobile + password invalid", auth_register(phone="98765", password="abc", confirm_password="abc"))),
-         ["FR-AUTH-1", "FR-AUTH-2", "FR-AUTH-3"], technique="Combination"),
-    Case("TC-AUTH-16", "AUTH", "System", "Log in with a wrong password", "Ramesh is registered as a vendor",
-         LOGIN_STEPS, "Mobile = 9876543210, Password = ramesh124", INVALID_LOGIN,
-         auth_login_case("9876543210", "ramesh124"), ["FR-AUTH-5"], technique="Negative"),
-    Case("TC-AUTH-17", "AUTH", "System", "Log in with an unregistered mobile number", "Ramesh is registered as a vendor",
-         LOGIN_STEPS, "Mobile = 9000000001 (not registered), Password = ramesh123", INVALID_LOGIN,
-         auth_login_case("9000000001", "ramesh123"), ["FR-AUTH-5"], technique="Negative"),
-    Case("TC-AUTH-18", "AUTH", "System", "SQL injection in the login form", "Ramesh is registered as a vendor",
-         LOGIN_STEPS, "Mobile = ' OR '1'='1, Password = ' OR '1'='1", INVALID_LOGIN,
-         auth_login_case("' OR '1'='1", "' OR '1'='1"), ["FR-AUTH-5", "NFR-SEC-4"], technique="Security"),
-    Case("TC-AUTH-19", "AUTH", "System", "Failed-attempt counter resets after a successful login",
-         "Ramesh is registered as a vendor",
-         ["Log in with a wrong password 4 times, then the correct one",
-          "Log in with a wrong password 4 more times, then the correct one"],
-         "Mobile = 9876543210; wrong1 (x4), ramesh123, wrong1 (x4), ramesh123",
-         "4 wrong + correct: Welcome, Ramesh Kumar! | 4 more wrong: Invalid mobile number or password | "
-         "Correct again: Welcome, Ramesh Kumar!", auth_counter_reset, ["FR-AUTH-6"], technique="BVA"),
-    Case("TC-AUTH-20", "AUTH", "System", "Open the dashboard without logging in", "Nobody is logged in",
-         ["Type the dashboard address in the browser"], "URL = /dashboard",
-         "Please log in first. -> Log in page is shown", auth_dashboard_without_login, ["FR-AUTH-7"],
-         technique="Security"),
+CASES = [
+    # ================================================================ Module 1: Registration & Login
+    TestCase("TC-AUTH-01", "AUTH", "Register a new account",
+             "Test that a new user can register, that the password is stored as a hash and that a mobile number "
+             "can be registered only once.",
+             [EMPTY_DB, "The user is on the Register page"],
+             [Step(CREATE, "Name = Ramesh Kumar, Mobile = 9876543210, Role = Street Vendor, Password = ramesh123, "
+                   "Confirm = ramesh123", f"{REG_OK} -> Log in page is shown", register(show=True),
+                   "Positive (happy path)"),
+              Step(f"{CHECK} 1", "-", "1 user stored; password saved as a hash, not as 'ramesh123'", password_hashed),
+              Step("Register again with the same mobile number", "Name = Suresh Kumar, Mobile = 9876543210, "
+                   "Password = suresh123", "Mobile number already registered",
+                   register(name="Suresh Kumar", password="suresh123"), "Negative - duplicate mobile"),
+              Step("Register a bank officer with a new mobile number", "Name = Anil Sharma, Mobile = 9123456780, "
+                   "Role = Bank / NBFC Officer, Password = bank123", f"{REG_OK} -> Log in page is shown",
+                   register("Anil Sharma", "9123456780", "bank123", role="BANK_OFFICER", show=True),
+                   "Positive - another role"),
+              Step(f"{CHECK} 2", "-", "2 users stored: Ramesh Kumar (VENDOR), Anil Sharma (BANK_OFFICER)",
+                   users_stored)],
+             ["Ramesh's password is stored only as a salted hash",
+              "Only the two valid registrations are stored; the duplicate mobile number is rejected"],
+             ["FR-AUTH-1", "FR-AUTH-2", "FR-AUTH-4", "NFR-SEC-1"]),
 
-    # ---------------------------------------------------------------- Module 2 (extended)
-    Case("TC-SALE-08", "SALE", "System", "Log a sale with a negative amount", "-", SALE_STEPS,
-         f"Date = {dmy(TODAY)}, Amount = -500, Mode = Cash", "Sale amount must be greater than 0",
-         sale(TODAY, -500, "CASH"), ["FR-VEN-4"], technique="Negative (EP)"),
-    Case("TC-SALE-09", "SALE", "System", "Non-numeric / empty amount", "-", SALE_STEPS,
-         f"Date = {dmy(TODAY)}, Amount = abc; then Amount = (empty)",
-         "abc: Sale amount must be a number | Empty: Sale amount must be a number",
-         each(("abc", sale(TODAY, "abc")), ("Empty", sale(TODAY, ""))), ["FR-VEN-4"], technique="Negative (EP)"),
-    Case("TC-SALE-10", "SALE", "System", "Special float values as the amount", "-", SALE_STEPS,
-         f"Date = {dmy(TODAY)}, Amount = nan; then Amount = inf",
-         "nan: Sale amount must be a number | inf: Sale amount must be a number",
-         each(("nan", sale(TODAY, "nan")), ("inf", sale(TODAY, "inf"))), ["FR-VEN-4"], technique="Negative (EP)",
-         defect="DEF-01"),
-    Case("TC-SALE-11", "SALE", "System", "Boundary value - upper limit Rs 1,00,000", "No sale logged today",
-         SALE_STEPS, f"Date = {dmy(TODAY)}, Amount = 100000; then Amount = 100000.01",
-         f"100000: {LOGGED} | 100000.01: Sale amount cannot exceed Rs 1,00,000 per day",
-         each(("100000", sale(TODAY, 100000)), ("100000.01", sale(TODAY, 100000.01))), ["FR-VEN-4"],
-         technique="BVA"),
-    Case("TC-SALE-12", "SALE", "System", "Boundary value - lower limit", "No sale logged today", SALE_STEPS,
-         f"Date = {dmy(TODAY)}, Amount = 1; then Amount = -0.01",
-         f"1: {LOGGED} | -0.01: Sale amount must be greater than 0",
-         each(("1", sale(TODAY, 1)), ("-0.01", sale(TODAY, -0.01))), ["FR-VEN-4"], technique="BVA"),
-    Case("TC-SALE-13", "SALE", "System", "Payment mode other than Cash / UPI (forged request)", "-",
-         [LOGIN_RAMESH, "Send the sales form with a payment mode that is not in the list"],
-         f"Date = {dmy(TODAY)}, Amount = 1500, Mode = CARD; then Mode = (empty)",
-         "CARD: Payment mode must be CASH or UPI | Empty: Payment mode must be CASH or UPI",
-         each(("CARD", sale(TODAY, 1500, "CARD")), ("Empty", sale(TODAY, 1500, ""))), ["FR-VEN-3"],
-         technique="Security"),
-    Case("TC-SALE-14", "SALE", "System", "Invalid / empty date", "-", SALE_STEPS,
-         "Date = 2026-02-30 (no such day); then Date = (empty); Amount = 1500, Mode = UPI",
-         "2026-02-30: Enter a valid date (YYYY-MM-DD) | Empty: Enter a valid date (YYYY-MM-DD)",
-         each(("2026-02-30", sale("2026-02-30", 1500)), ("Empty", sale("", 1500))), ["FR-VEN-3"],
-         technique="Negative (EP)"),
-    Case("TC-SALE-15", "SALE", "System", "Boundary value - back-dated entry 90 / 91 days old", "No sales logged",
-         SALE_STEPS, f"Date = {dmy(D90)} (90 days ago); then Date = {dmy(D91)} (91 days ago); Amount = 1500",
-         f"90 days old: {LOGGED} | 91 days old: Sale date cannot be more than 90 days old",
-         each(("90 days old", sale(D90, 1500)), ("91 days old", sale(D91, 1500))), ["FR-VEN-5"], technique="BVA",
-         defect="DEF-02"),
-    Case("TC-SALE-16", "SALE", "System", "Boundary value - today / tomorrow", "No sale logged today", SALE_STEPS,
-         f"Date = {dmy(TODAY)} (today); then Date = {dmy(TODAY + timedelta(days=1))} (tomorrow); Amount = 1500",
-         f"Today: {LOGGED} | Tomorrow: Sale date cannot be in the future",
-         each(("Today", sale(TODAY, 1500)), ("Tomorrow", sale(TODAY + timedelta(days=1), 1500))), ["FR-VEN-5"],
-         technique="BVA"),
-    Case("TC-SALE-17", "SALE", "System", "Several invalid fields at once (combination)", "-", SALE_STEPS,
-         f"(a) Amount = 0, Date = tomorrow, Mode = CARD; (b) Amount = 1500, Date = tomorrow, Mode = CARD",
-         "Amount + date + mode invalid: Sale amount must be greater than 0 | "
-         "Date + mode invalid: Sale date cannot be in the future",
-         each(("Amount + date + mode invalid", sale(TODAY + timedelta(days=1), 0, "CARD")),
-              ("Date + mode invalid", sale(TODAY + timedelta(days=1), 1500, "CARD"))),
-         ["FR-VEN-4", "FR-VEN-5"], technique="Combination"),
-    Case("TC-SALE-18", "SALE", "System", "Boundary value - years of vending 60 / 61 / -1", NO_PROFILE, PROFILE_STEPS,
-         "Business = Fruits & vegetables, Zone = Sector 14 Market, Years = 60; then 61; then -1",
-         "60: Profile saved. | 61: Years of vending must be between 0 and 60 | "
-         "-1: Years of vending must be between 0 and 60",
-         each(("60", profile_case(years_vending="60")), ("61", profile_case(years_vending="61")),
-              ("-1", profile_case(years_vending="-1"))), ["FR-VEN-2"], technique="BVA"),
-    Case("TC-SALE-19", "SALE", "System", "Profile with a mandatory field missing", NO_PROFILE, PROFILE_STEPS,
-         "Business type = (empty); then Vending zone = (empty); then Years = abc",
-         "No business type: Business type and vending zone are required | No zone: Business type and vending zone "
-         "are required | Years = abc: Years of vending must be a number",
-         each(("No business type", profile_case(business_type="")), ("No zone", profile_case(vending_zone="")),
-              ("Years = abc", profile_case(years_vending="abc"))), ["FR-VEN-2"], technique="Negative (EP)"),
+    TestCase("TC-AUTH-02", "AUTH", "Registration - name validation",
+             "Test the name rules: required, only letters, spaces and dots, at most 50 characters.",
+             [EMPTY_DB, "The user is on the Register page; Role = Street Vendor and Password = ramesh123 in every "
+              "step, and a new mobile number in every step"],
+             [Step(CREATE, "Name = (empty), Mobile = 9876543210", "Name is required", register("", "9876543210"),
+                   "Negative (EP) - empty"),
+              Step(CREATE, "Name = 12345, Mobile = 9876543211", "Name can contain only letters, spaces and dots",
+                   register("12345", "9876543211"), "Negative (EP) - digits", "DEF-04"),
+              Step(CREATE, "Name = 'A' x 51 characters, Mobile = 9876543212", "Name must be at most 50 characters",
+                   register("A" * 51, "9876543212"), "BVA - just above the limit", "DEF-04"),
+              Step(CREATE, "Name = 'A' x 50 characters, Mobile = 9876543213", REG_OK, register("A" * 50, "9876543213"),
+                   "BVA - on the limit"),
+              Step(CREATE, "Name = Mohd. Salim, Mobile = 9876543214", REG_OK, register("Mohd. Salim", "9876543214"),
+                   "Positive - name with a dot"),
+              Step(f"{CHECK} 1", "-", "2 users stored: 'A' x 50 (VENDOR), Mohd. Salim (VENDOR)", users_stored)],
+             ["Only the two valid names are stored; every rejected name stores nothing"],
+             ["FR-AUTH-1"]),
 
-    # ---------------------------------------------------------------- Module 3 (extended)
-    Case("TC-TS-07", "TS", "Unit", "Minimum score - brand-new vendor", "No EMI due yet",
-         ["Call compute_trust_score() with the input values"],
-         "Active days = 0/30, EMIs due = 0, Vouches = 0, Years = 0",
-         "0 + 20 + 0 + 0 = 20 -> HIGH RISK, not eligible",
-         ts_unit(active_days=0, window_days=30, on_time_emis=0, emis_due=0, vouches=0, years_vending=0),
-         ["FR-TS-2", "FR-TS-3"], technique="BVA"),
-    Case("TC-TS-08", "TS", "Unit", "Maximum score - perfect record", "-",
-         ["Call compute_trust_score() with the input values"],
-         "Active days = 30/30, On-time EMIs = 12 of 12 due, Vouches = 3, Years = 5",
-         "40 + 40 + 10 + 10 = 100 -> LOW RISK, eligible",
-         ts_unit(active_days=30, window_days=30, on_time_emis=12, emis_due=12, vouches=3, years_vending=5),
-         ["FR-TS-2", "FR-TS-4"], technique="BVA"),
-    Case("TC-TS-09", "TS", "Unit", "Vouches and years above their caps", "No EMI due yet",
-         ["Call compute_trust_score() with the input values"],
-         "Active days = 30/30, EMIs due = 0, Vouches = 7 (cap 3), Years = 20 (cap 5)",
-         "40 + 20 + 10 + 10 = 80 -> LOW RISK, eligible",
-         ts_unit(active_days=30, window_days=30, on_time_emis=0, emis_due=0, vouches=7, years_vending=20),
-         ["FR-TS-2"], technique="BVA"),
-    Case("TC-TS-10", "TS", "Unit", "Good sales but no EMI paid on time", "-",
-         ["Call compute_trust_score() with the input values"],
-         "Active days = 30/30, On-time EMIs = 0 of 6 due, Vouches = 0, Years = 5",
-         "40 + 0 + 0 + 10 = 50 -> MEDIUM RISK, eligible",
-         ts_unit(active_days=30, window_days=30, on_time_emis=0, emis_due=6, vouches=0, years_vending=5),
-         ["FR-TS-2", "FR-TS-4"], technique="Positive"),
-    Case("TC-TS-11", "TS", "Unit", "Boundary value - score 69 / 70 (MEDIUM / LOW RISK)", "No EMI due yet",
-         ["Call compute_trust_score() with the input values"],
-         "Active days = 29/30, then 30/30; EMIs due = 0, Vouches = 0, Years = 5",
-         "29 days: 38.7 + 20 + 0 + 10 = 69 -> MEDIUM RISK, eligible | 30 days: 40 + 20 + 0 + 10 = 70 -> LOW RISK, "
-         "eligible",
-         each(("29 days", ts_unit(active_days=29, window_days=30, on_time_emis=0, emis_due=0, vouches=0,
-                                  years_vending=5)),
-              ("30 days", ts_unit(active_days=30, window_days=30, on_time_emis=0, emis_due=0, vouches=0,
-                                  years_vending=5))),
-         ["FR-TS-4"], technique="BVA"),
-    Case("TC-TS-12", "TS", "Unit", "Invalid input - negative vouches", "-",
-         ["Call compute_trust_score() with the input values"],
-         "Active days = 30/30, EMIs due = 0, Vouches = -1, Years = 5", "Score inputs cannot be negative",
-         ts_unit(active_days=30, window_days=30, on_time_emis=0, emis_due=0, vouches=-1, years_vending=5),
-         ["FR-TS-1"], technique="Negative"),
-    Case("TC-TS-13", "TS", "Unit", "Invalid input - on-time EMIs exceed EMIs due", "-",
-         ["Call compute_trust_score() with the input values"],
-         "Active days = 30/30, On-time EMIs = 5, EMIs due = 3, Vouches = 0, Years = 5",
-         "On-time EMIs cannot exceed EMIs due",
-         ts_unit(active_days=30, window_days=30, on_time_emis=5, emis_due=3, vouches=0, years_vending=5),
-         ["FR-TS-1"], technique="Negative"),
-    Case("TC-TS-14", "TS", "System", "Score goes up after a sale is logged", NEW_SUNITA,
-         ["Log in as Sunita and read the score", "Log today's sale", "Read the score again"],
-         f"Date = {dmy(TODAY)}, Amount = 800, Mode = Cash",
-         "Before: 20/100 | After logging 1 sale: 21/100, HIGH RISK", ts_after_sale, ["FR-TS-1", "FR-VEN-3"],
-         technique="Positive"),
+    TestCase("TC-AUTH-03", "AUTH", "Registration - mobile number and role validation",
+             "Test that only a 10-digit Indian mobile number starting with 6-9 and one of the four roles are "
+             "accepted.",
+             [EMPTY_DB, "The user is on the Register page; Name = Ramesh Kumar and Password = ramesh123 in every step"],
+             [Step(CREATE, "Mobile = 987654321 (9 digits)", BAD_MOBILE, register(phone="987654321"), "BVA - 9 digits"),
+              Step(CREATE, "Mobile = 98765432101 (11 digits)", BAD_MOBILE, register(phone="98765432101"),
+                   "BVA - 11 digits"),
+              Step(CREATE, "Mobile = 5876543210 (starts with 5)", BAD_MOBILE, register(phone="5876543210"),
+                   "Negative (EP) - must start with 6-9"),
+              Step(CREATE, "Mobile = 98765abcde", BAD_MOBILE, register(phone="98765abcde"),
+                   "Negative (EP) - letters"),
+              Step(CREATE, "Mobile = 9876543210, Role = (not selected)", "Invalid role selected", register(role=""),
+                   "Negative - no role"),
+              Step("Send the form with a role that is not offered", "Mobile = 9876543210, Role = ADMIN",
+                   "Invalid role selected", register(role="ADMIN"), "Security - forged request"),
+              Step(f"{CHECK} 1", "-", "0 users stored", users_stored)],
+             ["No account is created by any of these inputs"],
+             ["FR-AUTH-1", "FR-AUTH-2"]),
 
-    # ---------------------------------------------------------------- Module 4 (extended)
-    Case("TC-LOAN-08", "LOAN", "System", "Zero / negative loan amount", "Ramesh has no loan", LOAN_STEPS,
-         "Amount = 0; then Amount = -5000",
-         "0: Loan amount must be greater than 0 | -5000: Loan amount must be greater than 0",
-         each(("0", loan_apply(0)), ("-5000", loan_apply(-5000))), ["FR-LN-4"], technique="BVA"),
-    Case("TC-LOAN-09", "LOAN", "System", "Non-numeric / empty loan amount", "Ramesh has no loan", LOAN_STEPS,
-         "Amount = abc; then Amount = (empty)",
-         "abc: Loan amount must be a number | Empty: Loan amount must be a number",
-         each(("abc", loan_apply("abc")), ("Empty", loan_apply(""))), ["FR-LN-4"], technique="Negative (EP)"),
-    Case("TC-LOAN-10", "LOAN", "System", "Special float values as the loan amount", "Ramesh has no loan", LOAN_STEPS,
-         "Amount = nan; then Amount = inf",
-         "nan: Loan amount must be a number | inf: Loan amount must be a number",
-         each(("nan", loan_apply("nan")), ("inf", loan_apply("inf"))), ["FR-LN-4"], technique="Negative (EP)",
-         defect="DEF-01"),
-    Case("TC-LOAN-11", "LOAN", "System", "Boundary value - Tier-1 limit 15,000 / 15,000.01", "Ramesh has no loan",
-         LOAN_STEPS, "Amount = 15000; then Amount = 15000.01 (fresh database each time)",
-         "15000: Loan application #1 submitted. Status: PENDING. | 15000.01: Amount exceeds Tier 1 limit of "
-         "Rs 15,000", each(("15000", loan_apply(15000)), ("15000.01", loan_apply(15000.01))), ["FR-LN-2", "FR-LN-4"],
-         technique="BVA"),
-    Case("TC-LOAN-12", "LOAN", "System", "Apply before saving the business profile", NO_PROFILE, LOAN_STEPS,
-         "Amount = 10000", "Complete your vendor profile first", loan_no_profile, ["FR-TS-1", "FR-VEN-6"],
-         technique="Negative"),
-    Case("TC-LOAN-13", "LOAN", "System", "Two rules broken at once (combination)", "-", LOAN_STEPS,
-         "(a) Sunita, score 20, Amount = 20000 (low score + above limit); (b) Ramesh with application #1 PENDING, "
-         "Amount = 20000 (active loan + above limit)",
-         "Low score + above limit: Trust score 20 is below 40. Not eligible | Active loan + above limit: You already "
-         "have an active loan",
-         each(("Low score + above limit", loan_apply(20000, low_score=True)),
-              ("Active loan + above limit", loan_apply(20000, twice=True))),
-         ["FR-LN-4", "FR-LN-5", "FR-TS-5"], technique="Combination"),
-    Case("TC-LOAN-14", "LOAN", "System", "Review an application that is already approved",
-         "Ramesh's application #1 is APPROVED", [LOGIN_OFFICER, "Send a Reject request for application #1"],
-         "Decision = Reject, Remarks = Changed my mind", "Only PENDING applications can be reviewed",
-         loan_officer_action("approved", "/officer/loan/1/review", decision="REJECT", remarks="Changed my mind"),
-         ["FR-BNK-2"], technique="Negative"),
-    Case("TC-LOAN-15", "LOAN", "System", "Disburse an application that is still pending",
-         "Ramesh's application #1 is PENDING", [LOGIN_OFFICER, "Send a Disburse request for application #1"],
-         "POST /officer/loan/1/disburse", "Only APPROVED loans can be disbursed",
-         loan_officer_action("pending", "/officer/loan/1/disburse"), ["FR-BNK-5"], technique="Negative"),
-    Case("TC-LOAN-16", "LOAN", "System", "Forged decision value", "Ramesh's application #1 is PENDING",
-         [LOGIN_OFFICER, "Send the review form with a decision that is not offered"],
-         "Decision = DELETE, Remarks = x", "Decision must be APPROVE or REJECT",
-         loan_officer_action("pending", "/officer/loan/1/review", decision="DELETE", remarks="x"), ["FR-BNK-2"],
-         technique="Security"),
-    Case("TC-LOAN-17", "LOAN", "System", "Review a loan that does not exist", "Only application #1 exists",
-         [LOGIN_OFFICER, "Send an Approve request for application #99"], "POST /officer/loan/99/review, Approve",
-         "Loan not found",
-         loan_officer_action("pending", "/officer/loan/99/review", decision="APPROVE", remarks=""), ["FR-BNK-2"],
-         technique="Negative"),
-    Case("TC-LOAN-18", "LOAN", "System", "Withdraw a pending application, then apply again",
-         "Ramesh's application #1 for Rs 15,000 is PENDING",
-         [LOGIN_RAMESH, "Click 'Withdraw' on application #1", "Apply for Rs 12,000"],
-         "Withdraw #1; then Amount = 12000",
-         "Application #1 withdrawn. | Loan application #2 submitted. Status: PENDING.", loan_withdraw_and_reapply,
-         ["FR-LN-5", "FR-LN-6"], technique="Positive"),
-    Case("TC-LOAN-19", "LOAN", "System", "Reject with remarks; vendor sees them and can re-apply",
-         "Ramesh's application #1 is PENDING",
-         [LOGIN_OFFICER, "Enter remarks and click 'Reject' on #1", LOGIN_RAMESH, "Open loan #1",
-          "Apply for Rs 15,000 again"],
-         "Remarks = Sales record too short; then Amount = 15000",
-         "Loan #1 REJECTED. | Vendor's loan page shows remarks: Sales record too short | Loan application #2 "
-         "submitted. Status: PENDING.", loan_reject_with_remarks, ["FR-BNK-3", "BR-5"], technique="Positive"),
-    Case("TC-LOAN-20", "LOAN", "System", "Customer / municipal officer opens a vendor's loan page",
-         "Ramesh's application #1 exists",
-         ["Log in as customer Priya (9988776655 / priya123) or municipal officer (9090909090 / muni123)",
-          "Type /loan/1 in the browser"], "URL = /loan/1",
-         "Customer: You are not allowed to open that page. | Municipal officer: You are not allowed to open that "
-         "page.", each(("Customer", loan_page_as("CUSTOMER")), ("Municipal officer", loan_page_as("MUNICIPAL_OFFICER"))),
-         ["FR-AUTH-7", "NFR-SEC-7"], technique="Security", defect="DEF-05"),
-    Case("TC-LOAN-21", "LOAN", "System", "Vendor opens another vendor's loan page", "Ramesh's application #1 exists",
-         ["Log in as Sunita (9812345670 / sunita123)", "Type /loan/1 in the browser"], "URL = /loan/1",
-         "You can only view your own loans.", loan_page_as("VENDOR"), ["FR-AUTH-7", "NFR-SEC-7"],
-         technique="Security"),
+    TestCase("TC-AUTH-04", "AUTH", "Registration - password validation",
+             "Test the password rules (at least 6 characters with a letter and a digit, confirmation must match) "
+             "and the message shown when every field is wrong.",
+             [EMPTY_DB, "The user is on the Register page; Name = Ramesh Kumar, Mobile = 9876543210, Role = Street "
+              "Vendor unless the step says otherwise"],
+             [Step(CREATE, "Password = Confirm = ab123 (5 characters)", WEAK, register(password="ab123"),
+                   "BVA - 5 characters"),
+              Step(CREATE, "Password = Confirm = abcdefgh", WEAK, register(password="abcdefgh"),
+                   "Negative (EP) - no digit"),
+              Step(CREATE, "Password = Confirm = 12345678", WEAK, register(password="12345678"),
+                   "Negative (EP) - no letter"),
+              Step(CREATE, "Password = ramesh123, Confirm = ramesh124", "Passwords do not match",
+                   register(confirm="ramesh124"), "Negative - confirmation differs"),
+              Step("Leave every field empty and click 'Create account'", "All fields empty", "Name is required",
+                   register("", "", "", role=""), "Combination - first broken rule is reported"),
+              Step(CREATE, "Password = Confirm = ab1234 (6 characters)", REG_OK, register(password="ab1234"),
+                   "BVA - 6 characters"),
+              Step(f"{CHECK} 1", "-", "1 user stored: Ramesh Kumar (VENDOR)", users_stored)],
+             ["Only the registration with a valid password (step 6) is stored"],
+             ["FR-AUTH-1", "FR-AUTH-3"]),
 
-    # ---------------------------------------------------------------- Module 5 (extended)
-    Case("TC-EMI-08", "EMI", "System", "Special float values as the payment", "No EMI paid yet", PAY_STEPS,
-         "Installment = 1, Amount = nan; then Amount = inf",
-         "nan: Payment amount must be a number | inf: Payment amount must be a number",
-         each(("nan", emi_case([(1, "nan")])), ("inf", emi_case([(1, "inf")]))), ["FR-EMI-3"],
-         technique="Negative (EP)", defect="DEF-03"),
-    Case("TC-EMI-09", "EMI", "System", "Non-numeric / empty payment", "No EMI paid yet", PAY_STEPS,
-         "Installment = 1, Amount = abc; then Amount = (empty)",
-         "abc: Payment amount must be a number | Empty: Payment amount must be a number",
-         each(("abc", emi_case([(1, "abc")])), ("Empty", emi_case([(1, "")]))), ["FR-EMI-3"],
-         technique="Negative (EP)"),
-    Case("TC-EMI-10", "EMI", "System", "Boundary value - 1 paisa less than the EMI / exact EMI", "No EMI paid yet",
-         PAY_STEPS, "Installment = 1, Amount = 1332.72; then Amount = 1332.73 (fresh database each time)",
-         "1332.72: Amount is less than EMI due of Rs 1332.73 | 1332.73: EMI #1 paid on time.",
-         each(("1332.72", emi_case([(1, 1332.72)])), ("1332.73", emi_case([(1, 1332.73)]))), ["FR-EMI-3"],
-         technique="BVA"),
-    Case("TC-EMI-11", "EMI", "System", "Zero / negative payment", "No EMI paid yet", PAY_STEPS,
-         "Installment = 1, Amount = 0; then Amount = -1332.73",
-         "0: Amount is less than EMI due of Rs 1332.73 | -1332.73: Amount is less than EMI due of Rs 1332.73",
-         each(("0", emi_case([(1, 0)])), ("-1332.73", emi_case([(1, -1332.73)]))), ["FR-EMI-3"],
-         technique="Negative (EP)"),
-    Case("TC-EMI-12", "EMI", "System", "Pay an EMI after its due date",
-         f"Loan #1 was disbursed on {dmy(TODAY - timedelta(days=40))} (40 days ago), so EMI #1 is overdue",
-         PAY_STEPS + ["Open the dashboard"], f"Installment = 1, Amount = 1332.73, paid on {dmy(TODAY)}",
-         "EMI #1 paid late. -> Trust Score 50/100", emi_late_payment, ["FR-EMI-5", "FR-TS-2"],
-         technique="Positive"),
-    Case("TC-EMI-13", "EMI", "System", "Paying on time raises the Trust Score", "No EMI paid yet; Trust Score 70",
-         PAY_STEPS + ["Open the dashboard"], "Installment = 1, Amount = 1332.73",
-         "Before: 70/100 | After paying EMI #1 on time: 90/100", emi_score_after_on_time, ["FR-EMI-5", "FR-TS-2"],
-         technique="Positive"),
-    Case("TC-EMI-14", "EMI", "System", "Installment number that does not exist (forged request)", "No EMI paid yet",
-         [LOGIN_RAMESH, "Send a payment request for installment #13, then #0"],
-         "POST /vendor/loan/1/pay/13 and /pay/0, Amount = 1332.73",
-         "#13: Installment not found | #0: Installment not found",
-         each(("#13", emi_case([(13, 1332.73)])), ("#0", emi_case([(0, 1332.73)]))), ["FR-EMI-1"],
-         technique="Security"),
-    Case("TC-EMI-15", "EMI", "System", "Vendor pays another vendor's EMI (forged request)", NEW_SUNITA,
-         ["Log in as Sunita (9812345670 / sunita123)", "Send a payment request for Ramesh's loan #1"],
-         "POST /vendor/loan/1/pay/1, Amount = 1332.73", "You can only pay your own loans",
-         emi_case([(1, 1332.73)], as_other_vendor=True), ["FR-AUTH-7", "NFR-SEC-7"], technique="Security",
-         defect="DEF-06"),
-    Case("TC-EMI-16", "EMI", "System", "Pay an EMI of a loan that does not exist", "Only loan #1 exists",
-         [LOGIN_RAMESH, "Send a payment request for loan #99"], "POST /vendor/loan/99/pay/1, Amount = 1332.73",
-         "Loan not found", emi_case([(1, 1332.73)], loan_no=99), ["FR-EMI-1"], technique="Negative",
-         defect="DEF-06"),
-    Case("TC-EMI-17", "EMI", "System", "Pay an EMI of an approved but not disbursed loan",
-         "Ramesh's loan #1 is APPROVED (not disbursed)", [LOGIN_RAMESH, "Send a payment request for loan #1"],
-         "POST /vendor/loan/1/pay/1, Amount = 1332.73", "Loan is not active for repayment", emi_not_disbursed,
-         ["FR-EMI-1", "FR-BNK-5"], technique="Negative"),
-    Case("TC-EMI-18", "EMI", "System", "Boundary value - EMI overdue 90 / 91 days", "Loan #1 is DISBURSED, no EMI paid",
-         [LOGIN_OFFICER, "Click 'Run default check (90+ days overdue)'"],
-         "EMI #1 due date set to 90 days ago; then to 91 days ago (fresh database each time)",
-         "90 days: Default check complete: 0 loan(s) marked DEFAULTED. | 91 days: Default check complete: 1 loan(s) "
-         "marked DEFAULTED.", each(("90 days", emi_default_boundary(90)), ("91 days", emi_default_boundary(91))),
-         ["FR-BNK-7", "BR-6"], technique="BVA"),
+    TestCase("TC-AUTH-05", "AUTH", "Login and logout",
+             "Test login with correct and wrong credentials, logout, and that pages need a logged-in user.",
+             ["Vendor Ramesh Kumar (9876543210 / ramesh123) is registered", "The user is on the Log in page"],
+             [Step("Enter mobile number and password; click 'Log in'", "9876543210 / ramesh123",
+                   "Welcome, Ramesh Kumar! -> Vendor dashboard is shown", login("9876543210", "ramesh123"),
+                   "Positive (happy path)"),
+              Step("Click 'Logout'", "-", "Logged out. -> Log in page is shown", get("/logout", show=True),
+                   "Positive"),
+              Step("Log in with a wrong password", "9876543210 / ramesh124", f"{INVALID_LOGIN} -> Log in page is shown",
+                   login("9876543210", "ramesh124"), "Negative - wrong password"),
+              Step("Log in with a mobile number that is not registered", "9000000001 / ramesh123",
+                   f"{INVALID_LOGIN} -> Log in page is shown", login("9000000001", "ramesh123"),
+                   "Negative - unknown user (same message, so no hint is given)"),
+              Step("Type an SQL-injection string in both fields", "' OR '1'='1 / ' OR '1'='1",
+                   f"{INVALID_LOGIN} -> Log in page is shown", login("' OR '1'='1", "' OR '1'='1"),
+                   "Security - SQL injection"),
+              Step("Type the dashboard address in the browser without logging in", "URL = /dashboard",
+                   "Please log in first. -> Log in page is shown", get("/dashboard", show=True),
+                   "Security - page needs login")],
+             ["A session exists only after step 1; after a failed login the user stays on the Log in page"],
+             ["FR-AUTH-5", "FR-AUTH-7", "NFR-SEC-4"], setup=lambda a: a.vendor()),
+
+    TestCase("TC-AUTH-06", "AUTH", "Account lock after 5 failed attempts",
+             "Test that 5 consecutive wrong passwords lock the account and that a successful login resets the "
+             "counter.",
+             ["Vendor Ramesh Kumar (9876543210 / ramesh123) is registered and not locked",
+              "The user is on the Log in page"],
+             [Step("Log in with a wrong password 4 times", "9876543210 / wrong1 (x4)",
+                   f"{INVALID_LOGIN} (each time)",
+                   lambda a: " / ".join(sorted({a.login("9876543210", "wrong1") for _ in range(4)})) + " (each time)",
+                   "Negative"),
+              Step("Log in with the correct password", "9876543210 / ramesh123",
+                   "Welcome, Ramesh Kumar! -> Vendor dashboard is shown", login("9876543210", "ramesh123"),
+                   "Successful login resets the counter"),
+              Step("Log in with a wrong password 4 more times", "9876543210 / wrong1 (x4)",
+                   f"{INVALID_LOGIN} (each time)",
+                   lambda a: " / ".join(sorted({a.login("9876543210", "wrong1") for _ in range(4)})) + " (each time)",
+                   "Not locked: the counter was reset"),
+              Step("Log in with a wrong password a 5th time", "9876543210 / wrong1", LOCKED,
+                   login("9876543210", "wrong1", show=False), "BVA - 5th attempt locks"),
+              Step("Log in with the correct password", "9876543210 / ramesh123", LOCKED,
+                   login("9876543210", "ramesh123", show=False), "Locked even with the correct password"),
+              Step(f"{CHECK} 1", "-", "is_locked = 1, failed_attempts = 5", lock_state)],
+             ["Ramesh's account is locked (is_locked = 1) after 5 consecutive failed attempts"],
+             ["FR-AUTH-6", "NFR-SEC-2"], setup=lambda a: a.vendor()),
+
+    # ================================================================ Module 2: Vendor Profile & Daily Sales
+    TestCase("TC-SALE-01", "SALE", "Save the profile and log a daily sale",
+             "Test that sales can be logged only after the profile is saved, and only once per day.",
+             [RAMESH_PRE, "He has NOT saved his business profile yet and has no sales"],
+             [Step(LOG_SALE, f"Date = {dmy(T)}, Amount = 1500, Mode = UPI", "Complete your vendor profile first",
+                   sale(T, 1500), "Negative - profile missing"),
+              Step("In 'Business profile' enter the values and click 'Save profile'",
+                   "Business = Fruits & vegetables, Zone = Sector 14 Market, Gurugram, Years = 5, UPI = ramesh@upi",
+                   "Profile saved.", profile(upi_id="ramesh@upi"), "Positive"),
+              Step(LOG_SALE, f"Date = {dmy(T)}, Amount = 1500, Mode = UPI", LOGGED, sale(T, 1500),
+                   "Positive (happy path)"),
+              Step(LOG_SALE, f"Date = {dmy(T)} (same day), Amount = 900, Mode = Cash",
+                   "Sales already logged for this date", sale(T, 900, "CASH"), "Negative - one entry per day"),
+              Step(f"{CHECK} 1", "-", f"1 sale stored: {dmy(T)} Rs 1500 UPI", sales_stored)],
+             ["The profile is saved and exactly one sale is stored for today; the duplicate entry is rejected"],
+             ["FR-VEN-1", "FR-VEN-3", "FR-VEN-5", "FR-VEN-6"], setup=ramesh_logged_in(profile_saved=False)),
+
+    TestCase("TC-SALE-02", "SALE", "Business profile validation",
+             "Test that business type and vending zone are required and years of vending must be 0-60.",
+             [RAMESH_PRE, "He has NOT saved his business profile; in every step the other fields are valid "
+              "(Business = Fruits & vegetables, Zone = Sector 14 Market, Gurugram, Years = 5)"],
+             [Step("Save the profile", "Business type = (empty)", "Business type and vending zone are required",
+                   profile(business_type=""), "Negative - required field"),
+              Step("Save the profile", "Vending zone = (empty)", "Business type and vending zone are required",
+                   profile(vending_zone=""), "Negative - required field"),
+              Step("Save the profile", "Years = abc", "Years of vending must be a number",
+                   profile(years_vending="abc"), "Negative (EP) - not a number"),
+              Step("Save the profile", "Years = 61", "Years of vending must be between 0 and 60",
+                   profile(years_vending="61"), "BVA - just above 60"),
+              Step("Save the profile", "Years = -1", "Years of vending must be between 0 and 60",
+                   profile(years_vending="-1"), "BVA - just below 0"),
+              Step("Save the profile", "Years = 60", "Profile saved.", profile(years_vending="60"),
+                   "BVA - on the limit"),
+              Step(f"{CHECK} 1", "-", "Profile stored: Fruits & vegetables, Sector 14 Market, Gurugram, 60 years",
+                   profile_stored)],
+             ["Only the valid profile (step 6) is stored"],
+             ["FR-VEN-1", "FR-VEN-2"], setup=ramesh_logged_in(profile_saved=False)),
+
+    TestCase("TC-SALE-03", "SALE", "Sale amount - invalid values",
+             "Test that zero, negative, non-numeric and special values (nan, inf) are rejected as the amount.",
+             [RAMESH_PRE, "His profile is saved and he has no sales; Date = today and Mode = UPI in every step"],
+             [Step(LOG_SALE, "Amount = 0", "Sale amount must be greater than 0", sale(T, "0"), "BVA - zero"),
+              Step(LOG_SALE, "Amount = -500", "Sale amount must be greater than 0", sale(T, "-500"),
+                   "Negative (EP) - negative"),
+              Step(LOG_SALE, "Amount = abc", "Sale amount must be a number", sale(T, "abc"),
+                   "Negative (EP) - text"),
+              Step(LOG_SALE, "Amount = (empty)", "Sale amount must be a number", sale(T, ""),
+                   "Negative (EP) - empty"),
+              Step(LOG_SALE, "Amount = nan", "Sale amount must be a number", sale(T, "nan"),
+                   "Negative (EP) - special value", "DEF-01"),
+              Step(LOG_SALE, "Amount = inf", "Sale amount must be a number", sale(T, "inf"),
+                   "Negative (EP) - special value", "DEF-01"),
+              Step(f"{CHECK} 1", "-", "0 sales stored", sales_stored)],
+             ["No sale is stored for any invalid amount"],
+             ["FR-VEN-4"], setup=ramesh_logged_in()),
+
+    TestCase("TC-SALE-04", "SALE", "Sale amount - boundary values",
+             "Test the amounts on both sides of the limits: greater than 0 and at most Rs 1,00,000 per day.",
+             [RAMESH_PRE, "His profile is saved and he has no sales; Mode = UPI in every step"],
+             [Step(LOG_SALE, f"Date = {dmy(T)}, Amount = 100000.01", "Sale amount cannot exceed Rs 1,00,000 per day",
+                   sale(T, "100000.01"), "BVA - just above the upper limit"),
+              Step(LOG_SALE, f"Date = {dmy(T)}, Amount = 100000", LOGGED, sale(T, "100000"),
+                   "BVA - on the upper limit"),
+              Step(LOG_SALE, f"Date = {dmy(Y)}, Amount = 1", LOGGED, sale(Y, "1"), "BVA - smallest whole amount"),
+              Step(LOG_SALE, f"Date = {dmy(T - timedelta(days=2))}, Amount = -0.01",
+                   "Sale amount must be greater than 0", sale(T - timedelta(days=2), "-0.01"),
+                   "BVA - just below the lower limit"),
+              Step(f"{CHECK} 1", "-", f"2 sales stored: {dmy(T)} Rs 100000 UPI, {dmy(Y)} Rs 1 UPI", sales_stored)],
+             ["Only the two amounts inside the limits are stored"],
+             ["FR-VEN-4"], setup=ramesh_logged_in()),
+
+    TestCase("TC-SALE-05", "SALE", "Sale date and payment mode validation",
+             "Test the date rules (not in the future, not more than 90 days old, a real date), the payment mode "
+             "and an entry with several wrong fields.",
+             [RAMESH_PRE, "His profile is saved and he has no sales; Amount = 1500 and Mode = UPI unless the step "
+              "says otherwise"],
+             [Step(LOG_SALE, f"Date = {dmy(TM)} (tomorrow)", "Sale date cannot be in the future", sale(TM, "1500"),
+                   "BVA - tomorrow"),
+              Step(LOG_SALE, "Date = 2026-02-30 (no such day)", "Enter a valid date (YYYY-MM-DD)",
+                   sale("2026-02-30", "1500"), "Negative (EP) - invalid date"),
+              Step(LOG_SALE, f"Date = {dmy(D91)} (91 days ago)", "Sale date cannot be more than 90 days old",
+                   sale(D91, "1500"), "BVA - just outside 90 days", "DEF-02"),
+              Step(LOG_SALE, f"Date = {dmy(D90)} (90 days ago)", LOGGED, sale(D90, "1500"),
+                   "BVA - on the 90-day limit"),
+              Step("Send the sales form with a payment mode that is not offered", f"Date = {dmy(T)}, Mode = CARD",
+                   "Payment mode must be CASH or UPI", sale(T, "1500", "CARD"), "Security - forged value"),
+              Step(LOG_SALE, f"Amount = 0, Date = {dmy(TM)}, Mode = CARD (three fields wrong)",
+                   "Sale amount must be greater than 0", sale(TM, "0", "CARD"),
+                   "Combination - first broken rule is reported"),
+              Step(f"{CHECK} 1", "-", f"1 sale stored: {dmy(D90)} Rs 1500 UPI", sales_stored)],
+             ["Only the entry dated 90 days ago (step 4) is stored"],
+             ["FR-VEN-3", "FR-VEN-4", "FR-VEN-5"], setup=ramesh_logged_in()),
+
+    TestCase("TC-SALE-06", "SALE", "30-day sales summary on the dashboard",
+             "Test that the dashboard shows the correct 30-day total, active days, daily average and the updated "
+             "Trust Score.",
+             [RAMESH_PRE, "His profile is saved (5 years of vending) and he has no sales"],
+             [Step(LOG_SALE, f"Date = {dmy(T - timedelta(days=2))}, Amount = 1000, Mode = Cash", LOGGED,
+                   sale(T - timedelta(days=2), "1000", "CASH"), "Positive"),
+              Step(LOG_SALE, f"Date = {dmy(Y)}, Amount = 2000, Mode = Cash", LOGGED, sale(Y, "2000", "CASH"),
+                   "Positive"),
+              Step(LOG_SALE, f"Date = {dmy(T)}, Amount = 3000, Mode = Cash", LOGGED, sale(T, "3000", "CASH"),
+                   "Positive"),
+              Step("Read the summary cards on the dashboard", "-",
+                   "30-day sales Rs 6,000; active days 3/30; average Rs 2,000 per active day", summary_cards,
+                   "Hand calculation: 6000 / 3 = 2000"),
+              Step("Read the Trust Score card", "-", "Trust Score 34/100, HIGH RISK", trust_card,
+                   "Hand calculation: 3/30 x 40 + 20 + 0 + 10 = 34")],
+             ["Three sales are stored and the summary and Trust Score reflect them"],
+             ["FR-VEN-7", "FR-TS-1"], setup=ramesh_logged_in()),
+
+    # ================================================================ Module 3: Trust Score
+    TestCase("TC-TS-01", "TS", "Trust Score of a new vendor on the dashboard",
+             "Test the score, risk band and component points shown to a new vendor, and that the score is updated "
+             "and used for loan eligibility.",
+             ["Vendor Sunita Devi (9812345670 / sunita123) is registered; her profile shows 0 years of vending; "
+              "she has no sales, vouches or loans"],
+             [Step("Log in as Sunita and read the Trust Score card", "9812345670 / sunita123",
+                   "Trust Score 20/100, HIGH RISK", as_user("9812345670", "sunita123", trust_card),
+                   "Hand calculation: 0 + 20 (no EMI due) + 0 + 0"),
+              Step("Read the four component bars", "-",
+                   "Sales consistency 0/40, Repayment history 20/40, Peer vouching 0/10, Vending tenure 0/10",
+                   components, "Explainable score"),
+              Step(LOG_SALE, f"Date = {dmy(T)}, Amount = 800, Mode = Cash", LOGGED, sale(T, "800", "CASH"),
+                   "Positive"),
+              Step("Read the Trust Score card again", "-", "Trust Score 21/100, HIGH RISK", trust_card,
+                   "1/30 x 40 = 1.3; 1.3 + 20 = 21"),
+              Step(APPLY, "Amount = 10000", "Trust score 21 is below 40. Not eligible", apply("10000"),
+                   "Negative - score below 40")],
+             ["One sale is stored; no loan is created"],
+             ["FR-TS-1", "FR-TS-3", "FR-TS-4", "FR-TS-5", "FR-TS-6"], setup=lambda a: a.vendor(**SUNITA)),
+
+    TestCase("TC-TS-02", "TS", "Formula - loan eligibility boundary (39 / 40)",
+             "Test the score on both sides of the eligibility cut-off of 40.",
+             ["compute_trust_score() is called directly (unit test)",
+              "Window = 30 days; no EMI due yet (repayment = 20); Vouches = 0; Years = 0"],
+             [Step(CALL, "Active days = 14", "18.7 + 20 + 0 + 0 = 39 -> HIGH RISK, not eligible", formula(14),
+                   "BVA - just below 40"),
+              Step(CALL, "Active days = 15", "20 + 20 + 0 + 0 = 40 -> MEDIUM RISK, eligible", formula(15),
+                   "BVA - on 40"),
+              Step(CALL, "Active days = 16", "21.3 + 20 + 0 + 0 = 41 -> MEDIUM RISK, eligible", formula(16),
+                   "BVA - just above 40")],
+             ["Score, band and eligibility are returned; no stored data changes"],
+             ["FR-TS-2", "FR-TS-4", "FR-TS-5"], level="Unit"),
+
+    TestCase("TC-TS-03", "TS", "Formula - risk band boundary (69 / 70)",
+             "Test the score on both sides of the MEDIUM / LOW RISK boundary.",
+             ["compute_trust_score() is called directly (unit test)",
+              "Window = 30 days; no EMI due yet (repayment = 20); Years = 5"],
+             [Step(CALL, "Active days = 29, Vouches = 0", "38.7 + 20 + 0 + 10 = 69 -> MEDIUM RISK, eligible",
+                   formula(29, years=5), "BVA - just below 70"),
+              Step(CALL, "Active days = 30, Vouches = 0", "40 + 20 + 0 + 10 = 70 -> LOW RISK, eligible",
+                   formula(30, years=5), "BVA - on 70"),
+              Step(CALL, "Active days = 28, Vouches = 1", "37.3 + 20 + 3.3 + 10 = 71 -> LOW RISK, eligible",
+                   formula(28, vouches=1, years=5), "BVA - just above 70")],
+             ["Score, band and eligibility are returned; no stored data changes"],
+             ["FR-TS-2", "FR-TS-4"], level="Unit"),
+
+    TestCase("TC-TS-04", "TS", "Formula - minimum, maximum and repayment history",
+             "Test the lowest and highest possible scores and the effect of the repayment record.",
+             ["compute_trust_score() is called directly (unit test)", "Window = 30 days"],
+             [Step(CALL, "Active days = 0, EMIs due = 0, Vouches = 0, Years = 0",
+                   "0 + 20 + 0 + 0 = 20 -> HIGH RISK, not eligible", formula(0), "BVA - minimum"),
+              Step(CALL, "Active days = 30, On-time EMIs = 12 of 12, Vouches = 3, Years = 5",
+                   "40 + 40 + 10 + 10 = 100 -> LOW RISK, eligible", formula(30, on_time=12, due=12, vouches=3, years=5),
+                   "BVA - maximum"),
+              Step(CALL, "Active days = 30, On-time EMIs = 0 of 6, Vouches = 0, Years = 5",
+                   "40 + 0 + 0 + 10 = 50 -> MEDIUM RISK, eligible", formula(30, due=6, years=5),
+                   "No EMI paid on time"),
+              Step(CALL, "Active days = 24, On-time EMIs = 6 of 12, Vouches = 1, Years = 2",
+                   "32 + 20 + 3.3 + 4 = 59 -> MEDIUM RISK, eligible", formula(24, on_time=6, due=12, vouches=1, years=2),
+                   "Positive - partial record")],
+             ["Score, band and eligibility are returned; no stored data changes"],
+             ["FR-TS-2", "FR-TS-3", "FR-TS-4"], level="Unit"),
+
+    TestCase("TC-TS-05", "TS", "Formula - caps on vouches and tenure",
+             "Test that only 3 vouches and 5 years of vending count toward the score.",
+             ["compute_trust_score() is called directly (unit test)",
+              "Active days = 30 of 30; no EMI due yet (repayment = 20)"],
+             [Step(CALL, "Vouches = 3, Years = 5", "40 + 20 + 10 + 10 = 80 -> LOW RISK, eligible",
+                   formula(30, vouches=3, years=5), "BVA - on the caps"),
+              Step(CALL, "Vouches = 7, Years = 20", "40 + 20 + 10 + 10 = 80 -> LOW RISK, eligible",
+                   formula(30, vouches=7, years=20), "BVA - above the caps (same score)"),
+              Step(CALL, "Vouches = 2, Years = 4", "40 + 20 + 6.7 + 8 = 75 -> LOW RISK, eligible",
+                   formula(30, vouches=2, years=4), "BVA - below the caps")],
+             ["Score, band and eligibility are returned; no stored data changes"],
+             ["FR-TS-2", "BR-8"], level="Unit"),
+
+    TestCase("TC-TS-06", "TS", "Formula - invalid inputs",
+             "Test that impossible input values are rejected with a clear message.",
+             ["compute_trust_score() is called directly (unit test)"],
+             [Step(CALL, "Active days = 35, Window = 30", "Active days cannot exceed the observation window",
+                   formula(35), "Negative - more days than the window"),
+              Step(CALL, "Active days = 30, Vouches = -1, Years = 5", "Score inputs cannot be negative",
+                   formula(30, vouches=-1, years=5), "Negative - negative value"),
+              Step(CALL, "Active days = 30, On-time EMIs = 5, EMIs due = 3", "On-time EMIs cannot exceed EMIs due",
+                   formula(30, on_time=5, due=3), "Negative - inconsistent values")],
+             ["No score is returned for invalid input"],
+             ["FR-TS-1"], level="Unit"),
+
+    # ================================================================ Module 4: Loan Application & Bank Review
+    TestCase("TC-LOAN-01", "LOAN", "Eligible vendor applies for a Tier-1 loan",
+             "Test a loan application at and above the Tier-1 limit and the one-active-loan rule.",
+             ELIGIBLE_PRE,
+             [Step("Read the Trust Score and the eligible-limit card on the dashboard", "-",
+                   "Trust Score 70/100, LOW RISK; Eligible limit Rs 15,000 (Tier 1)",
+                   lambda a: f"{trust_card(a)}; {limit_card(a)}", "Positive"),
+              Step(APPLY, "Amount = 15000.01", "Amount exceeds Tier 1 limit of Rs 15,000", apply("15000.01"),
+                   "BVA - just above the tier limit"),
+              Step(APPLY, "Amount = 15000", "Loan application #1 submitted. Status: PENDING.", apply("15000"),
+                   "BVA - on the tier limit"),
+              Step(APPLY, "Amount = 5000", "You already have an active loan", apply("5000"),
+                   "Negative - one active loan only"),
+              Step(f"{CHECK} 1", "-", "1 loan stored: #1 Rs 15000, Tier 1, 12 months, 12% p.a., Trust Score 70, "
+                   "PENDING", loans_stored)],
+             ["Application #1 is stored as PENDING with its tier, tenure, interest rate and Trust Score"],
+             ["FR-LN-1", "FR-LN-2", "FR-LN-4", "FR-LN-5", "FR-LN-6"], setup=ramesh_eligible),
+
+    TestCase("TC-LOAN-02", "LOAN", "Loan amount - invalid values",
+             "Test that zero, negative, non-numeric and special values are rejected as the loan amount.",
+             ELIGIBLE_PRE,
+             [Step(APPLY, "Amount = 0", "Loan amount must be greater than 0", apply("0"), "BVA - zero"),
+              Step(APPLY, "Amount = -5000", "Loan amount must be greater than 0", apply("-5000"),
+                   "Negative (EP) - negative"),
+              Step(APPLY, "Amount = abc", "Loan amount must be a number", apply("abc"), "Negative (EP) - text"),
+              Step(APPLY, "Amount = (empty)", "Loan amount must be a number", apply(""), "Negative (EP) - empty"),
+              Step(APPLY, "Amount = nan", "Loan amount must be a number", apply("nan"),
+                   "Negative (EP) - special value", "DEF-01"),
+              Step(APPLY, "Amount = inf", "Loan amount must be a number", apply("inf"),
+                   "Negative (EP) - special value", "DEF-01"),
+              Step(f"{CHECK} 1", "-", "0 loans stored", loans_stored)],
+             ["No loan application is stored"],
+             ["FR-LN-4"], setup=ramesh_eligible),
+
+    TestCase("TC-LOAN-03", "LOAN", "Vendor who is not eligible applies",
+             "Test that a vendor with a Trust Score below 40, or without a profile, cannot apply.",
+             ["Vendor Sunita Devi (9812345670 / sunita123): profile with 0 years of vending, no sales, Trust Score 20",
+              "Vendor Mohan Lal (9898989898 / mohan123) is registered but has NOT saved a profile"],
+             [Step(f"Log in as Sunita. {APPLY}", "Amount = 10000", "Trust score 20 is below 40. Not eligible",
+                   as_user("9812345670", "sunita123", apply("10000")), "Negative - score below 40"),
+              Step(APPLY, "Amount = 20000 (also above the Tier-1 limit)", "Trust score 20 is below 40. Not eligible",
+                   apply("20000"), "Combination - eligibility is checked first"),
+              Step(f"Log in as Mohan. {APPLY}", "Amount = 10000", "Complete your vendor profile first",
+                   as_user("9898989898", "mohan123", apply("10000")), "Negative - no profile"),
+              Step(f"{CHECK} 1", "-", "0 loans stored", loans_stored)],
+             ["No loan application is stored"],
+             ["FR-TS-5", "FR-VEN-6", "BR-4"],
+             setup=lambda a: (a.vendor(**SUNITA), a.vendor("Mohan Lal", "9898989898", "mohan123", profile=False,
+                                                            sale_days=0))),
+
+    TestCase("TC-LOAN-04", "LOAN", "Bank officer approves and disburses a loan",
+             "Test approval and disbursal, and that the loan cannot skip or repeat a state.",
+             ["Ramesh's application #1 for Rs 15,000 (Tier 1) is PENDING",
+              "Bank officer Anil Sharma (9123456780 / bank123) is logged in"],
+             [Step("Send a Disburse request for #1 (the button appears only after approval)", "Loan #1",
+                   "Only APPROVED loans can be disbursed", post("/officer/loan/1/disburse"),
+                   "Negative - invalid state change"),
+              Step("Click 'Approve' on application #1", "Decision = Approve, Remarks = (empty)", "Loan #1 APPROVED.",
+                   review("APPROVE"), "Positive"),
+              Step("Send an Approve request for #1 again", "Decision = Approve", "Only PENDING applications can be "
+                   "reviewed", review("APPROVE"), "Negative - invalid state change"),
+              Step("Click 'Disburse' on loan #1", "Loan #1", "Loan #1 disbursed. 12 EMIs of Rs 1332.73 scheduled.",
+                   post("/officer/loan/1/disburse"), "Positive - EMI from hand calculation"),
+              Step(f"{CHECK} 1", "-", f"Loan #1 DISBURSED on {dmy(T)}; 12 EMIs created", loan_status)],
+             ["Loan #1 is DISBURSED with today's date and 12 EMIs are created"],
+             ["FR-BNK-2", "FR-BNK-5", "FR-BNK-6"], setup=pending_loan_officer_logged_in),
+
+    TestCase("TC-LOAN-05", "LOAN", "Officer rejects; vendor re-applies and withdraws",
+             "Test rejection rules (remarks required, valid decision, existing loan), that the vendor sees the "
+             "remarks, and withdrawal.",
+             ["Ramesh's application #1 for Rs 15,000 is PENDING; Ramesh's Trust Score is 70",
+              "Bank officer Anil Sharma (9123456780 / bank123) is logged in"],
+             [Step("Leave Remarks empty and click 'Reject' on #1", "Decision = Reject, Remarks = (empty)",
+                   "Remarks are required when rejecting", review("REJECT"), "Negative - remarks required"),
+              Step("Send the review form with a decision that is not offered", "Decision = DELETE, Remarks = x",
+                   "Decision must be APPROVE or REJECT", review("DELETE", "x"), "Security - forged value"),
+              Step("Send an Approve request for application #99", "Loan #99 (does not exist)", "Loan not found",
+                   review("APPROVE", loan_no=99), "Negative - unknown loan"),
+              Step("Enter remarks and click 'Reject' on #1", "Decision = Reject, Remarks = Sales record too short",
+                   "Loan #1 REJECTED.", review("REJECT", "Sales record too short"), "Positive"),
+              Step("Log in as Ramesh and open loan #1", "9876543210 / ramesh123",
+                   "Loan #1 page is shown; Officer remarks: Sales record too short",
+                   as_user("9876543210", "ramesh123", loan_page_with_remarks), "Remarks shown to the vendor"),
+              Step(APPLY, "Amount = 12000", "Loan application #2 submitted. Status: PENDING.", apply("12000"),
+                   "Positive - may re-apply after rejection"),
+              Step("Click 'Withdraw' on application #2", "Loan #2", "Application #2 withdrawn.",
+                   post("/vendor/loan/2/withdraw"), "Positive"),
+              Step(f"{CHECK} 1", "-", "Loan #1 REJECTED (remarks: Sales record too short); Loan #2 WITHDRAWN",
+                   loan_status)],
+             ["Application #1 is REJECTED with the officer's remarks and application #2 is WITHDRAWN"],
+             ["FR-BNK-2", "FR-BNK-3", "FR-LN-5", "FR-LN-6", "BR-5"], setup=pending_loan_officer_logged_in),
+
+    TestCase("TC-LOAN-06", "LOAN", "Access control on officer and loan pages",
+             "Test that each role can open only the pages allowed to it.",
+             ["Ramesh's application #1 exists", "Registered: Sunita Devi (vendor, 9812345670 / sunita123), Priya "
+              "Mehta (customer, 9988776655 / priya123), R K Verma (municipal officer, 9090909090 / muni123), "
+              "Anil Sharma (bank officer, 9123456780 / bank123)"],
+             [Step("Log in as Ramesh; type /officer in the browser", "URL = /officer",
+                   "You are not allowed to open that page.", as_user("9876543210", "ramesh123", get("/officer")),
+                   "Security - vendor on officer page"),
+              Step("Log in as Priya (customer); type /loan/1", "URL = /loan/1",
+                   "You are not allowed to open that page.", as_user("9988776655", "priya123", get("/loan/1")),
+                   "Security - customer", "DEF-05"),
+              Step("Log in as R K Verma (municipal officer); type /loan/1", "URL = /loan/1",
+                   "You are not allowed to open that page.", as_user("9090909090", "muni123", get("/loan/1")),
+                   "Security - municipal officer", "DEF-05"),
+              Step("Log in as Sunita (another vendor); type /loan/1", "URL = /loan/1",
+                   "You can only view your own loans.", as_user("9812345670", "sunita123", get("/loan/1")),
+                   "Security - other vendor"),
+              Step("Log in as Anil (bank officer); open /loan/1", "URL = /loan/1", "Loan #1 page is shown",
+                   as_user("9123456780", "bank123", get("/loan/1")), "Positive - bank officer"),
+              Step("Log in as Ramesh; open /loan/1", "URL = /loan/1", "Loan #1 page is shown",
+                   as_user("9876543210", "ramesh123", get("/loan/1")), "Positive - owner")],
+             ["Loan data is visible only to its vendor and to bank officers; nothing is changed"],
+             ["FR-AUTH-7", "FR-BNK-4", "NFR-SEC-7", "BR-1"],
+             setup=lambda a: (loan.apply_loan(a.conn, a.vendor(), 15000), a.vendor(**SUNITA),
+                              a.user("Priya Mehta", "9988776655", "priya123", "CUSTOMER"),
+                              a.user("R K Verma", "9090909090", "muni123", "MUNICIPAL_OFFICER"), a.officer())),
+
+    # ================================================================ Module 5: EMI Schedule & Repayment
+    TestCase("TC-EMI-01", "EMI", "View the EMI schedule",
+             "Test the generated reducing-balance EMI schedule against a hand calculation.",
+             DISBURSED_PRE,
+             [Step("Read the 'Next EMI' card on the dashboard", "-",
+                   f"Next EMI Rs 1,332.73 due {months_later(T, 1).isoformat()}", next_emi_card, "Positive"),
+              Step("Click 'View' on loan #1 and read the EMI schedule", "Loan #1",
+                   f"12 installments; EMI #1 Rs 1,332.73 due {months_later(T, 1).isoformat()}; EMI #12 due "
+                   f"{months_later(T, 12).isoformat()}", schedule, "Monthly due dates"),
+              Step("Read the principal / interest split of EMI #1", "-",
+                   "EMI #1 = Principal Rs 1,182.73 + Interest Rs 150.00", emi_split(1),
+                   "Interest = 15000 x 0.01 = 150"),
+              Step("Read the split of EMI #2", "-", "EMI #2 = Principal Rs 1,194.56 + Interest Rs 138.17", emi_split(2),
+                   "Interest = 13817.27 x 0.01 (reducing balance)"),
+              Step("Read the summary cards on the loan page", "-", "Rs 15,000, Tier 1; 12 months @ 12.0% p.a.; EMIs "
+                   "paid 0/12", loan_cards, "Positive")],
+             ["The schedule is displayed; nothing is changed"],
+             ["FR-BNK-6", "FR-EMI-1"], setup=disbursed_ramesh_logged_in()),
+
+    TestCase("TC-EMI-02", "EMI", "Pay EMIs in order",
+             "Test paying EMIs, and that an installment cannot be paid twice or out of order.",
+             DISBURSED_PRE + ["No EMI has been paid"],
+             [Step(PAY, "Installment #1, Amount = 1332.73", "EMI #1 paid on time.", pay(1, "1332.73"),
+                   "Positive (happy path)"),
+              Step("Send a payment request for #1 again", "Installment #1, Amount = 1332.73", "Installment already paid",
+                   pay(1, "1332.73"), "Security - forged request"),
+              Step("Send a payment request for #3 (the page offers only #2)", "Installment #3, Amount = 1332.73",
+                   "Pay earlier installment #2 first", pay(3, "1332.73"), "Security - out of order"),
+              Step(PAY, "Installment #2, Amount = 1332.73", "EMI #2 paid on time.", pay(2, "1332.73"), "Positive"),
+              Step(f"{CHECK} 1", "-", "EMI #1 PAID on time, EMI #2 PAID on time; 10 DUE", emis_paid)],
+             ["EMIs #1 and #2 are PAID (on time); the other 10 are still DUE"],
+             ["FR-EMI-2", "FR-EMI-4", "FR-EMI-5"], setup=disbursed_ramesh_logged_in()),
+
+    TestCase("TC-EMI-03", "EMI", "Payment amount - invalid values",
+             "Test that a payment less than the EMI, or one that is not a number, is rejected.",
+             DISBURSED_PRE + ["No EMI has been paid; every step pays installment #1"],
+             [Step(PAY, "Amount = 1332.72 (1 paisa less)", "Amount is less than EMI due of Rs 1332.73",
+                   pay(1, "1332.72"), "BVA - just below the EMI"),
+              Step(PAY, "Amount = 0", "Amount is less than EMI due of Rs 1332.73", pay(1, "0"), "BVA - zero"),
+              Step(PAY, "Amount = abc", "Payment amount must be a number", pay(1, "abc"), "Negative (EP) - text"),
+              Step(PAY, "Amount = (empty)", "Payment amount must be a number", pay(1, ""), "Negative (EP) - empty"),
+              Step(PAY, "Amount = nan", "Payment amount must be a number", pay(1, "nan"),
+                   "Negative (EP) - special value", "DEF-03"),
+              Step(PAY, "Amount = inf", "Payment amount must be a number", pay(1, "inf"),
+                   "Negative (EP) - special value", "DEF-03"),
+              Step(f"{CHECK} 1", "-", "0 installments PAID; 12 DUE", emis_paid)],
+             ["No installment is marked PAID"],
+             ["FR-EMI-3"], setup=disbursed_ramesh_logged_in()),
+
+    TestCase("TC-EMI-04", "EMI", "Full repayment raises the score and unlocks Tier 2",
+             "Test that on-time payments raise the Trust Score and that paying the last EMI closes the loan and "
+             "unlocks the next tier (progressive lending).",
+             DISBURSED_PRE + ["No EMI has been paid; Ramesh's Trust Score is 70"],
+             [Step("Read the Trust Score card", "-", "Trust Score 70/100, LOW RISK", trust_card,
+                   "No EMI due yet: repayment = 20"),
+              Step(f"{PAY}; then read the Trust Score", "Installment #1, Amount = 1332.73",
+                   "EMI #1 paid on time. -> Trust Score 90/100, LOW RISK",
+                   lambda a: f"{pay(1, '1332.73')(a)} -> {trust_card(a)}", "1 of 1 on time: repayment = 40"),
+              Step("Pay installments #2 to #12 in order, each with the amount shown", "11 payments",
+                   "EMI #12 paid on time. Loan fully repaid - you are now eligible for the next tier!",
+                   lambda a: [pay(r[0], r[1])(a) for r in a.conn.execute(
+                       "SELECT installment_no, emi_amount FROM emi_installments WHERE installment_no > 1 "
+                       "ORDER BY installment_no").fetchall()][-1], "Positive"),
+              Step("Open the dashboard and read the eligible-limit card", "-", "Eligible limit Rs 25,000 (Tier 2)",
+                   limit_card, "Next tier unlocked"),
+              Step(f"{CHECK} 1", "-", "Loan #1 CLOSED; 12 of 12 EMIs PAID",
+                   lambda a: f"{loan_status(a)}; {emis_paid(a)}")],
+             ["Loan #1 is CLOSED, all 12 EMIs are PAID and Ramesh can now borrow up to Rs 25,000"],
+             ["FR-EMI-5", "FR-EMI-6", "FR-LN-3", "FR-TS-2"], setup=disbursed_ramesh_logged_in()),
+
+    TestCase("TC-EMI-05", "EMI", "Invalid payment requests",
+             "Test forged payment requests: unknown installment or loan, someone else's loan, a loan not disbursed.",
+             DISBURSED_PRE + ["Sunita Devi (9812345670 / sunita123) is a registered vendor",
+                              "Mohd. Salim (9811122233 / salim123) has loan #2 APPROVED but not yet disbursed"],
+             [Step("Send a payment request for installment #13", "Loan #1, Installment #13, Amount = 1332.73",
+                   "Installment not found", pay(13, "1332.73"), "Security - no such installment"),
+              Step("Send a payment request for installment #0", "Loan #1, Installment #0, Amount = 1332.73",
+                   "Installment not found", pay(0, "1332.73"), "BVA - below #1"),
+              Step("Send a payment request for loan #99", "Loan #99, Installment #1, Amount = 1332.73",
+                   "Loan not found", pay(1, "1332.73", loan_no=99), "Negative - unknown loan", "DEF-06"),
+              Step("Log in as Sunita; send a payment for Ramesh's loan #1", "Loan #1, Installment #1",
+                   "You can only pay your own loans", as_user("9812345670", "sunita123", pay(1, "1332.73")),
+                   "Security - someone else's loan", "DEF-06"),
+              Step("Log in as Salim; send a payment for his loan #2", "Loan #2, Installment #1",
+                   "Loan is not active for repayment", as_user("9811122233", "salim123", pay(1, "1332.73", loan_no=2)),
+                   "Negative - loan not disbursed"),
+              Step(f"{CHECK} 1", "-", "0 installments PAID; 12 DUE", emis_paid)],
+             ["No installment is marked PAID"],
+             ["FR-EMI-1", "FR-BNK-5", "NFR-SEC-7"],
+             setup=lambda a: (disbursed_ramesh_logged_in()(a), a.vendor(**SUNITA),
+                              loan.review_loan(a.conn, loan.apply_loan(
+                                  a.conn, a.vendor("Mohd. Salim", "9811122233", "salim123", years=4), 10000),
+                                  2, "APPROVE", ""),
+                              a.login("9876543210", "ramesh123"))),
+
+    TestCase("TC-EMI-06", "EMI", "Late payment and default check (90 / 91 days overdue)",
+             "Test that a loan becomes DEFAULTED only when an EMI is MORE than 90 days overdue, that it can still be "
+             "repaid, and that a late payment lowers the Trust Score.",
+             [RAMESH_PRE.replace(" and logged in", ""), "His loan #1 (Rs 15,000) is DISBURSED and no EMI is paid",
+              f"EMI #1's due date is {dmy(D90)} (exactly 90 days ago)",
+              "Bank officer Anil Sharma (9123456780 / bank123) is logged in"],
+             [Step("Click 'Run default check (90+ days overdue)'", f"EMI #1 due {dmy(D90)} (90 days overdue)",
+                   "Default check complete: 0 loan(s) marked DEFAULTED.", post("/officer/mark-defaults"),
+                   "BVA - exactly 90 days: not defaulted"),
+              Step("One day later, click 'Run default check' again", f"EMI #1 due {dmy(D91)} (91 days overdue)",
+                   "Default check complete: 1 loan(s) marked DEFAULTED.",
+                   lambda a: (a.conn.execute("UPDATE emi_installments SET due_date = ? WHERE installment_no = 1",
+                                             (D91.isoformat(),)), a.conn.commit(),
+                              post("/officer/mark-defaults")(a))[-1], "BVA - 91 days: defaulted"),
+              Step(f"{CHECK} 1", "-", "Loan #1 DEFAULTED", loan_status),
+              Step(f"Log in as Ramesh. {PAY}", "Installment #1, Amount = 1332.73", "EMI #1 paid late.",
+                   as_user("9876543210", "ramesh123", pay(1, "1332.73")), "A defaulted loan can still be repaid"),
+              Step("Read the Trust Score card", "-", "Trust Score 50/100, MEDIUM RISK", trust_card,
+                   "0 of 1 on time: repayment = 0; 40 + 0 + 0 + 10")],
+             ["Loan #1 is DEFAULTED; EMI #1 is PAID (late)"],
+             ["FR-BNK-7", "BR-6", "FR-EMI-5", "FR-TS-2"],
+             setup=lambda a: (a.disbursed_loan(),
+                              a.conn.execute("UPDATE emi_installments SET due_date = ? WHERE installment_no = 1",
+                                             (D90.isoformat(),)), a.conn.commit(),
+                              a.login("9123456780", "bank123"))),
 ]
-
-# Order the list module by module (AUTH, SALE, TS, LOAN, EMI) so documents read naturally.
-_ORDER = list(MODULES)
-CASES.sort(key=lambda c: (_ORDER.index(c.module), int(c.id.rsplit("-", 1)[1])))
 
 # Defects found by these test cases in the first version of the code (git commit 0ce1911) and fixed afterwards.
 DEFECTS = [
-    {"id": "DEF-01", "severity": "High", "cases": ["TC-SALE-10", "TC-LOAN-10"],
-     "found": "Typing 'nan' as a sale or loan amount crashed the app (HTTP 500 Internal Server Error); 'inf' as a "
-              "loan amount gave a misleading message.",
+    {"id": "DEF-01", "severity": "High",
+     "found": "Typing 'nan' as a sale or loan amount crashed the app (HTTP 500 Internal Server Error); 'inf' gave a "
+              "misleading message.",
      "cause": "Python's float() accepts 'nan' and 'inf'. NaN passed every comparison and SQLite stored it as NULL "
               "in a NOT NULL column.",
      "fix": "New helper parse_number() in database.py rejects values that are not finite numbers."},
-    {"id": "DEF-02", "severity": "Medium", "cases": ["TC-SALE-15"],
-     "found": "A sale dated 1900-01-01 (or any old date) was accepted.",
+    {"id": "DEF-02", "severity": "Medium",
+     "found": "A sale dated 91 days ago (or 01-01-1900) was accepted.",
      "cause": "Only future dates were checked.",
      "fix": "vendor.log_daily_sale() rejects entries more than 90 days old (MAX_BACKDATE_DAYS); FR-VEN-5 updated."},
-    {"id": "DEF-03", "severity": "High", "cases": ["TC-EMI-08"],
-     "found": "Paying an EMI with amount 'nan' or 'inf' marked the installment PAID.",
+    {"id": "DEF-03", "severity": "High",
+     "found": "Paying an EMI with amount 'nan' marked the installment PAID.",
      "cause": "Same as DEF-01: the 'less than EMI' check is False for NaN.",
      "fix": "loan.pay_emi() uses parse_number()."},
-    {"id": "DEF-04", "severity": "Low", "cases": ["TC-AUTH-09", "TC-AUTH-10"],
-     "found": "Names such as '12345' or a 300-character string were accepted at registration.",
+    {"id": "DEF-04", "severity": "Low",
+     "found": "Names such as '12345' or a 51-character string were accepted at registration.",
      "cause": "The name was only checked for being non-empty.",
      "fix": "auth.validate_name(): letters, spaces, dots and apostrophes only, at most 50 characters; FR-AUTH-1 "
             "updated."},
-    {"id": "DEF-05", "severity": "High", "cases": ["TC-LOAN-20"],
+    {"id": "DEF-05", "severity": "High",
      "found": "A customer or municipal officer could open any vendor's loan page and see the amount and EMIs.",
      "cause": "The /loan/<id> page only required a logged-in user and checked ownership for vendors only.",
      "fix": "Only the owning vendor and bank officers may open a loan page (LOAN_VIEW_ROLES in app.py)."},
-    {"id": "DEF-06", "severity": "Low", "cases": ["TC-EMI-15", "TC-EMI-16"],
+    {"id": "DEF-06", "severity": "Low",
      "found": "Paying an EMI of a loan that does not exist, or of another vendor's loan, showed two error messages "
-              "('Loan not found | Loan not found', 'You can only pay your own loans | You can only view your own "
-              "loans.').",
-     "cause": "The error page redirected to the loan page, which reported the same error again.",
+              "('Loan not found | Loan not found').",
+     "cause": "The error page redirected to the loan page, which reported a second error.",
      "fix": "The pay_emi route redirects to the dashboard when the loan is missing or not the vendor's own."},
 ]
+for d in DEFECTS:      # which test cases / steps found each defect
+    d["cases"] = [f"{c.id} step {i}" for c in CASES for i, s in enumerate(c.steps, 1) if s.defect == d["id"]]

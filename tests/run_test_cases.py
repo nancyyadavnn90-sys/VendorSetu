@@ -38,22 +38,29 @@ def run(module=None, details=False, combos=True, out=None, label="current code")
         if case.module != current:
             current = case.module
             print(f"--- {MODULES[current]['name']} ---")
-        try:
-            actual = case.run()
-        except Exception as e:                        # an unexpected crash is a failure, not a test-runner error
-            actual = f"ERROR: {type(e).__name__}: {e}"
-        remark = "PASS" if actual == case.expected else "FAIL"
-        results.append({"id": case.id, "module": case.module, "level": case.level, "technique": case.technique,
-                        "defect": case.defect, "scenario": case.scenario, "pre": case.pre, "steps": case.steps,
-                        "input": case.input, "expected": case.expected, "actual": actual, "remark": remark,
-                        "reqs": case.reqs})
-        print(f"{case.id:<11} {remark}  [{case.technique}] {case.scenario}")
-        if details or remark == "FAIL":
-            print(f"            input:    {case.input}\n            expected: {case.expected}\n"
-                  f"            actual:   {actual}")
+        steps = []
+        for i, (s, actual) in enumerate(zip(case.steps, case.run()), start=1):
+            steps.append({"no": i, "action": s.action, "data": s.data, "expected": s.expected, "actual": actual,
+                          "result": "PASS" if actual == s.expected else "FAIL", "note": s.note, "defect": s.defect})
+        result = "PASS" if all(st["result"] == "PASS" for st in steps) else "FAIL"
+        n_fail = sum(st["result"] == "FAIL" for st in steps)
+        results.append({"id": case.id, "module": case.module, "name": case.name, "level": case.level,
+                        "description": case.description, "pre": case.pre, "post": case.post, "reqs": case.reqs,
+                        "steps": steps, "result": result})
+        print(f"{case.id:<11} {result}  {case.name}  ({len(steps)} steps"
+              + (f", {n_fail} failed)" if n_fail else ")"))
+        for st in steps:
+            if details or st["result"] == "FAIL":
+                print(f"    step {st['no']}  {st['result']}  {st['action']}\n"
+                      f"             input:    {st['data']}\n"
+                      f"             expected: {st['expected']}\n"
+                      f"             actual:   {st['actual']}")
 
-    passed = sum(r["remark"] == "PASS" for r in results)
-    print(f"\n{passed}/{len(results)} test cases passed, {len(results) - passed} failed")
+    passed = sum(r["result"] == "PASS" for r in results)
+    n_steps = sum(len(r["steps"]) for r in results)
+    steps_ok = sum(st["result"] == "PASS" for r in results for st in r["steps"])
+    print(f"\n{passed}/{len(results)} test cases passed, {len(results) - passed} failed "
+          f"({steps_ok}/{n_steps} steps passed)")
 
     combo_results = []
     if combos:
